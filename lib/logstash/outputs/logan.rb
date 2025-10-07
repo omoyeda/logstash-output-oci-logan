@@ -1,12 +1,23 @@
 # encoding: utf-8
 require "logstash/outputs/base"
 
+require "benchmark"
+# require 'zip'
+# require 'yajl'
+# require 'yajl/json_gem'
+require 'json'
+
 require 'logger'
 require_relative '../dto/logEventsJson'
 require_relative '../dto/logEvents'
 # require_relative '../metrics/prometheusMetrics'
 require_relative '../metrics/metricsLabels'
 require_relative '../enums/source'
+
+# Import only specific OCI modules to improve load times and reduce the memory requirements.
+require 'oci/auth/auth'
+require 'oci/log_analytics/log_analytics'
+require 'oci/log_analytics/log_analytics_client'
 
 # Workaround until OCI SDK releases a proper fix to load only specific service related modules/client.
 require 'oci/api_client'
@@ -45,6 +56,22 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
   concurrency :single
   default :codec, "line"
+
+  MAX_FILES_PER_ZIP = 100
+  METRICS_INVALID_REASON_MESSAGE = "MISSING_FIELD_MESSAGE"
+  METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
+  METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
+
+  METRICS_SERVICE_ERROR_REASON_400 = "INVALID_PARAMETER"
+  METRICS_SERVICE_ERROR_REASON_401 = "AUTHENTICATION_FAILED"
+  METRICS_SERVICE_ERROR_REASON_404 = "AUTHORIZATION_FAILED"
+  METRICS_SERVICE_ERROR_REASON_429 = "TOO_MANY_REQUESTES"
+  METRICS_SERVICE_ERROR_REASON_500 = "INTERNAL_SERVER_ERROR"
+  METRICS_SERVICE_ERROR_REASON_502 = "BAD_GATEWAY"
+  METRICS_SERVICE_ERROR_REASON_503 = "SERVICE_UNAVAILABLE"
+  METRICS_SERVICE_ERROR_REASON_504 = "GATEWAY_TIMEOUT"
+  METRICS_SERVICE_ERROR_REASON_505 = "HTTP_VERSION_NOT_SUPPORTED"
+  METRICS_SERVICE_ERROR_REASON_UNKNOWN = "UNKNOWN_ERROR"
 
   @@logger = nil
   @@loganalytics_client = nil
@@ -103,6 +130,17 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # OCI Output plugin 4xx exception handling - Except '429'
   config :plugin_retry_on_4xx, :validate => :boolean, :default => false
 
+
+  ## ---------------------------------------------------------------
+  # Mutex related parameter for thread synchronization
+  # ---------------------------------------------------------------
+  #****************************************************************
+  # batch (or chunk) limit size
+  config :batch_size, :validate => :string, :default => "1m"
+  config :flush_interval, :validate => :number, :default => 10
+  config :retry_type, :validate => ["exponential_backoff", "fixed"]
+  config :flush_thread_count, :validate => :number, :default => 1
+
   @@default_log_level = 'info'
   @@default_log_rotation = 'daily'
   @@validated_log_size = nil
@@ -120,7 +158,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
     # @@prometheusMetrics = PrometheusMetrics.instance
     initialize_logger()
-    initialize_loganalytics_client()
+
+    # uncomment after dealing with other bugs
+    # initialize_loganalytics_client()
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
     if !is_mandatory_fields_valid
@@ -158,7 +198,58 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     # if buffer_config.flush_interval < 10
     #   raise LogStash::ConfigurationError, "flush_interval must be greater than or equal to 10sec"
     # end
+
+    # @mutex = Mutex.new
+    # @num_flush_threads = Float(buffer_config.flush_thread_count)
+    # max_chunk_lifespan = (buffer_config.retry_type == :exponential_backoff) ?
+    #   buffer_config.retry_wait * buffer_config.retry_exponential_backoff_base**(buffer_config.retry_max_times+1) - 1 :
+    #   buffer_config.retry_wait * buffer_config.retry_max_times
+
+    # validate_batch_size!
+    # validate_flush_interval!
+    # retry mechanism
+    # setup_retry_and_thread_config
+    @mutex = Mutex.new
+    @events_buffer = [] # instance variable created once when plugin initializes
   end
+
+  # just a test
+  def validate_batch_size!
+    # batch_size is the equivalent of chunk_limit_size from Fluentd
+    batch_size = @batch_size.to_s
+    @@logger.debug{"Batch size is #{batch_size}"}
+
+    case batch_size.downcase
+    when /([0-9]+)k/
+      batch_size_bytes = $~[1].to_i * 1024
+    when /([0-9]+)m/
+      batch_size_bytes = $~[1].to_i * (1024 ** 2)
+    when /([0-9]+)g/
+      batch_size_bytes = $~[1].to_i * (1024 ** 3)
+    when /([0-9]+)t/
+      batch_size_bytes = $~[1].to_i * (1024 ** 4)
+    else
+      raise LogStash::ConfigurationError, "error parsing batch_size"
+    end
+
+    @@logger.debug{"Batch size in bytes is #{batch_size_bytes}"}
+
+    if batch_size_bytes && !batch_size_bytes.between?(1048576, 4194304)
+      raise LogStash::ConfigurationError, "batch_size must be between 1MB and 4MB"
+    end
+
+    @batch_size_bytes = batch_size_bytes
+  end
+  # test
+  def validate_flush_interval!
+    flush_interval = @flush_interval
+    if flush_interval < 10
+      raise LogStash::ConfigurationError, "flush_interval must be greater than or equal to 10 sec"
+    end
+  end
+
+  # def setup_retry_and_thread_config
+  # end
 
   # Default function for the plugin
   # This function is resposible for getting the events from Logstash
@@ -252,8 +343,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
                           upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, metricsLabels_array)
                         end
                     end
-                    }.real.round(3)
-                    # @@prometheusMetrics.chunk_time_to_upload.observe(chunk_upload_time_taken, labels: { worker_id: @@worker_id, oci_la_log_group_id: oci_la_log_group_id})
+                  }.real.round(3)
+                  # @@prometheusMetrics.chunk_time_to_upload.observe(chunk_upload_time_taken, labels: { worker_id: @@worker_id, oci_la_log_group_id: oci_la_log_group_id})
 
                 end
             ensure
@@ -623,7 +714,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     begin
         invalid_reason = nil
         if !record_hash.has_key?("message")
-          invalid_reason = OutOracleOCILogAnalytics::METRICS_INVALID_REASON_MESSAGE
+          invalid_reason = METRICS_INVALID_REASON_MESSAGE
           if record_hash.has_key?("tag")
             @@logger.warn {"Invalid records associated with tag : #{event.get("tag")}. 'message' field is not present in the record."}
           else
@@ -632,7 +723,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
           end
           return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_group_id") || !is_valid(event.get("oci_la_log_group_id"))
-            invalid_reason = OutOracleOCILogAnalytics::METRICS_INVALID_REASON_LOG_GROUP_ID
+            invalid_reason = METRICS_INVALID_REASON_LOG_GROUP_ID
             if record_hash.has_key?("tag")
               @@logger.warn {"Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_group_id' must not be empty.
                               Skipping all the records associated with the tag"}
@@ -641,7 +732,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
             end
             return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_source_name") || !is_valid(event.get("oci_la_log_source_name"))
-          invalid_reason = OutOracleOCILogAnalytics::METRICS_INVALID_REASON_LOG_SOURCE_NAME
+          invalid_reason = METRICS_INVALID_REASON_LOG_SOURCE_NAME
           if record_hash.has_key?("tag")
             @@logger.warn {"Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_source_name' must not be empty.
                             Skipping all the records associated with the tag"}
@@ -698,7 +789,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
               return nil
           end
           if message.is_a?(Hash)
-              return Yajl.dump(message) #JSON.generate(message)
+              # return Yajl.dump(message) #JSON.generate(message)
+              return JSON.dump(message)
           end
           return message
       rescue => ex
@@ -710,240 +802,243 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   end
 
   def group_by_logGroupId(events_encoded)
+    @mutex.synchronize do
     begin
-        current  = Time.now
-        current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
-        events = []
-        count = 0
-        latency = 0
-        records_per_tag = 0
+      current  = Time.now
+      current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
+      # events = []
+      count = 0
+      latency = 0
+      records_per_tag = 0
 
-        tag_metrics_set = Hash.new
-        logGroup_labels_set = Hash.new
+      tag_metrics_set = Hash.new
+      logGroup_labels_set = Hash.new
 
-        invalid_tag_set = Set.new
-        incoming_records_per_tag = Hash.new
-        invalid_records_per_tag = Hash.new
-        tags_per_logGroupId = Hash.new
-        tag_logSet_map = Hash.new
-        tag_metadata_map = Hash.new
-        timezoneValuesByTag = Hash.new
-        incoming_records = 0
-        events_encoded.each do |event, encoded|
-          # @@logger.debug{"Log group ID here - #{event.get("oci_la_log_group_id")} - Class: #{event.get("oci_la_log_group_id").class}"}
-          time = event.get('@timestamp').time.strftime("%Y%m%dT%H%M%S%9NZ")
-          incoming_records += 1
-          metricsLabels = MetricsLabels.new
-          if !encoded.nil?
-            begin
-                  # record_hash = record.keys.map {|x| [x,true]}.to_h
-                  record_hash = event.to_hash
-                  # if record_hash.has_key?("worker_id") && is_valid(record["worker_id"])
-                  if record_hash.has_key?("worker_id") && is_valid(event.get("worker_id"))
-                      metricsLabels.worker_id = event.get("worker_id")# ||= '0'
-                      @@worker_id = event.get("worker_id")# ||= '0'
+      invalid_tag_set = Set.new
+      incoming_records_per_tag = Hash.new
+      invalid_records_per_tag = Hash.new
+      tags_per_logGroupId = Hash.new
+      tag_logSet_map = Hash.new
+      tag_metadata_map = Hash.new
+      timezoneValuesByTag = Hash.new
+      incoming_records = 0
+      events_encoded.each do |event, encoded|
+        # @@logger.debug{"Log group ID here - #{event.get("oci_la_log_group_id")} - Class: #{event.get("oci_la_log_group_id").class}"}
+        time = event.get('@timestamp').time.strftime("%Y%m%dT%H%M%S%9NZ")
+        incoming_records += 1
+        metricsLabels = MetricsLabels.new
+        if !encoded.nil?
+          begin
+            # record_hash = record.keys.map {|x| [x,true]}.to_h
+            record_hash = event.to_hash
+            # if record_hash.has_key?("worker_id") && is_valid(record["worker_id"])
+            if record_hash.has_key?("worker_id") && is_valid(event.get("worker_id"))
+                metricsLabels.worker_id = event.get("worker_id")# ||= '0'
+                @@worker_id = event.get("worker_id")# ||= '0'
+            end
+            is_tag_exists = false
+            if record_hash.has_key?("tag") && is_valid(event.get("tag"))
+              is_tag_exists = true
+              metricsLabels.tag = event.get("tag")
+            end
+
+            if is_tag_exists && incoming_records_per_tag.has_key?(event.get("tag"))
+              incoming_records_per_tag[event.get("tag")] += 1
+            elsif is_tag_exists
+              incoming_records_per_tag[event.get("tag")] = 1
+            end
+            #For any given tag, if one record fails (mandatory fields validation) then all the records from that source will be ignored
+            if is_tag_exists && invalid_tag_set.include?(event.get("tag"))
+              invalid_records_per_tag[event.get("tag")] += 1
+              next #This tag is already present in the invalid_tag_set, so ignoring the message.
+            end
+            #Setting tag/default value for oci_la_log_path, when not provided in config file.
+            if !record_hash.has_key?("oci_la_log_path") || !is_valid(event.get("oci_la_log_path"))
+                  if is_tag_exists
+                    event.set("oci_la_log_path", event.get("tag"))
+                  else
+                    event.set("oci_la_log_path", 'UNDEFINED')
                   end
-                  is_tag_exists = false
-                  if record_hash.has_key?("tag") && is_valid(event.get("tag"))
-                    is_tag_exists = true
-                    metricsLabels.tag = event.get("tag")
-                  end
+            end
 
-                  if is_tag_exists && incoming_records_per_tag.has_key?(event.get("tag"))
-                    incoming_records_per_tag[event.get("tag")] += 1
-                  elsif is_tag_exists
-                    incoming_records_per_tag[event.get("tag")] = 1
-                  end
-                #For any given tag, if one record fails (mandatory fields validation) then all the records from that source will be ignored
-                if is_tag_exists && invalid_tag_set.include?(event.get("tag"))
-                  invalid_records_per_tag[event.get("tag")] += 1
-                  @@logger.debug{"BLOCKAGE HERE!!! - is_tag_exists &&..."}
-                  next #This tag is already present in the invalid_tag_set, so ignoring the message.
-                end
-                #Setting tag/default value for oci_la_log_path, when not provided in config file.
-                if !record_hash.has_key?("oci_la_log_path") || !is_valid(event.get("oci_la_log_path"))
-                      if is_tag_exists
-                        event.set("oci_la_log_path", event.get("tag"))
-                      else
-                        event.set("oci_la_log_path", 'UNDEFINED')
-                      end
-                end
+            #Extracting oci_la_log_set when oci_la_log_set_key and oci_la_log_set_ext_regex is provided.
+            #1) oci_la_log_set param is not provided in config file and above logic not executed.
+            #2) Valid oci_la_log_set_key + No oci_la_log_set_ext_regex
+              #a) Valid key available in record with oci_la_log_set_key corresponding value  (oci_la_log_set_key is a key in config file) --> oci_la_log_set
+              #b) No Valid key available in record with oci_la_log_set_key corresponding value --> nil
+            #3) Valid key available in record with oci_la_log_set_key corresponding value + Valid oci_la_log_set_ext_regex
+              #a) Parse success --> parsed oci_la_log_set
+              #b) Parse failure --> nil (as oci_la_log_set value)
+            #4) No oci_la_log_set_key --> do nothing --> nil
 
-                #Extracting oci_la_log_set when oci_la_log_set_key and oci_la_log_set_ext_regex is provided.
-                #1) oci_la_log_set param is not provided in config file and above logic not executed.
-                #2) Valid oci_la_log_set_key + No oci_la_log_set_ext_regex
-                  #a) Valid key available in record with oci_la_log_set_key corresponding value  (oci_la_log_set_key is a key in config file) --> oci_la_log_set
-                  #b) No Valid key available in record with oci_la_log_set_key corresponding value --> nil
-                #3) Valid key available in record with oci_la_log_set_key corresponding value + Valid oci_la_log_set_ext_regex
-                  #a) Parse success --> parsed oci_la_log_set
-                  #b) Parse failure --> nil (as oci_la_log_set value)
-                #4) No oci_la_log_set_key --> do nothing --> nil
+            #Extracting oci_la_log_set when oci_la_log_set and oci_la_log_set_ext_regex is provided.
+            #1) Valid oci_la_log_set + No oci_la_log_set_ext_regex --> oci_la_log_set
+            #2) Valid oci_la_log_set + Valid oci_la_log_set_ext_regex
+              #a) Parse success --> parsed oci_la_log_set
+              #b) Parse failure --> nil (as oci_la_log_set value)
+            #3) No oci_la_log_set --> do nothing --> nil
 
-                #Extracting oci_la_log_set when oci_la_log_set and oci_la_log_set_ext_regex is provided.
-                #1) Valid oci_la_log_set + No oci_la_log_set_ext_regex --> oci_la_log_set
-                #2) Valid oci_la_log_set + Valid oci_la_log_set_ext_regex
-                  #a) Parse success --> parsed oci_la_log_set
-                  #b) Parse failure --> nil (as oci_la_log_set value)
-                #3) No oci_la_log_set --> do nothing --> nil
-
-                unparsed_logSet = nil
-                processed_logSet = nil
-                if is_tag_exists && tag_logSet_map.has_key?(event.get("tag"))
-                    event.set("oci_la_log_set", tag_logSet_map[event.get("tag")])
-                else
-                  if record_hash.has_key?("oci_la_log_set_key")
-                      if is_valid(event.get("oci_la_log_set_key")) && record_hash.has_key?(event.get("oci_la_log_set_key"))
-                          if is_valid(event.get(event.get("oci_la_log_set_key")))
-                              unparsed_logSet = event.get(event.get("oci_la_log_set_key"))
-                              # come back later - check fn
-                              processed_logSet = get_or_parse_logSet(unparsed_logSet, event, record_hash,is_tag_exists)
-                          end
-                      end
-                  end
-                  if !is_valid(processed_logSet) && record_hash.has_key?("oci_la_log_set")
-                      if is_valid(event.get("oci_la_log_set"))
-                          unparsed_logSet = event.get("oci_la_log_set")
+            unparsed_logSet = nil
+            processed_logSet = nil
+            if is_tag_exists && tag_logSet_map.has_key?(event.get("tag"))
+                event.set("oci_la_log_set", tag_logSet_map[event.get("tag")])
+            else
+              if record_hash.has_key?("oci_la_log_set_key")
+                  if is_valid(event.get("oci_la_log_set_key")) && record_hash.has_key?(event.get("oci_la_log_set_key"))
+                      if is_valid(event.get(event.get("oci_la_log_set_key")))
+                          unparsed_logSet = event.get(event.get("oci_la_log_set_key"))
                           # come back later - check fn
                           processed_logSet = get_or_parse_logSet(unparsed_logSet, event, record_hash,is_tag_exists)
                       end
                   end
-                  event.set("oci_la_log_set", processed_logSet)
-                  tag_logSet_map[event.get("tag")] = processed_logSet
-                end
-                # come back later - check fn
-                is_valid, metricsLabels.invalid_reason = is_valid_record(record_hash, event)
-
-                unless is_valid
-                  if is_tag_exists
-                    invalid_tag_set.add(event.get("tag"))
-                    invalid_records_per_tag[event.get("tag")] = 1
+              end
+              if !is_valid(processed_logSet) && record_hash.has_key?("oci_la_log_set")
+                  if is_valid(event.get("oci_la_log_set"))
+                      unparsed_logSet = event.get("oci_la_log_set")
+                      # come back later - check fn
+                      processed_logSet = get_or_parse_logSet(unparsed_logSet, event, record_hash,is_tag_exists)
                   end
-                  @@logger.debug{"BLOCKAGE HERE!!! - is_valid"}
-                  next
-                end
-
-                metricsLabels.logGroupId = event.get("oci_la_log_group_id")
-                metricsLabels.logSourceName = event.get("oci_la_log_source_name")
-                if event.get("oci_la_log_set") != nil
-                    metricsLabels.logSet = event.get("oci_la_log_set")
-                end
-                # come back later - check for now
-                event.set("message", json_message_handler("message", event.get("message")))
-
-
-                #This will check for null or empty messages and only that record will be ignored.
-                if !is_valid(event.get("message"))
-                    metricsLabels.invalid_reason = OutOracleOCILogAnalytics::METRICS_INVALID_REASON_MESSAGE
-                    if is_tag_exists
-                      if invalid_records_per_tag.has_key?(event.get("tag"))
-                        invalid_records_per_tag[event.get("tag")] += 1
-                      else
-                        invalid_records_per_tag[event.get("tag")] = 1
-                        @@logger.warn {"'message' field is empty or encoded, Skipping records associated with tag : #{revent.get("tag")}."}
-                      end
-                    else
-                      @@logger.warn {"'message' field is empty or encoded, Skipping record."}
-                    end
-                    @@logger.debug{"BLOCKAGE HERE - !is_valid(event.get(message)!!!"}
-                    next
-                end
-
-                if record_hash.has_key?("kubernetes")
-                  # come back later - check fn
-                  event.set("oci_la_metadata", get_kubernetes_metadata(event.get("oci_la_metadata"),event))
-                end
-
-                if tag_metadata_map.has_key?(event.get("tag"))
-                  event.set("oci_la_metadata", tag_metadata_map[event.get("tag")])
-                else
-                  if record_hash.has_key?("oci_la_metadata")
-                      event.set("oci_la_metadata", get_valid_metadata(event.get("oci_la_metadata")))
-                      tags_per_logGroupId[event.get("tag")] = event.get("oci_la_metadata")
-                  else
-                      tags_per_logGroupId[event.get("tag")] = nil
-                  end
-                end
-
-                if is_tag_exists
-                  if tags_per_logGroupId.has_key?(event.get("oci_la_log_group_id"))
-                    if !tags_per_logGroupId[event.get("oci_la_log_group_id")].include?(event.get("tag"))
-                      tags_per_logGroupId[event.get("oci_la_log_group_id")] += ", "+event.get("tag")
-                    end
-                  else
-                    tags_per_logGroupId[event.get("oci_la_log_group_id")] = event.get("tag")
-                  end
-                end
-                # validating the timezone field
-                if !timezoneValuesByTag.has_key?(event.get("tag"))
-                  begin
-                    timezoneIdentifier = event.get("oci_la_timezone")
-                    unless is_valid(timezoneIdentifier)
-                      event.set("oci_la_timezone", nil)
-                    else
-                      isTimezoneExist = timezone_exist? timezoneIdentifier
-                      unless isTimezoneExist
-                        @@logger.warn { "Invalid timezone '#{timezoneIdentifier}', using default UTC." }
-                        event.set("oci_la_timezone", "UTC")
-                      end
-
-                    end
-                    timezoneValuesByTag[event.get("tag")] = event.get("oci_la_timezone")
-                  end
-                else
-                  event.set("oci_la_timezone", timezoneValuesByTag[event.get("tag")])
-                end
-
-                # events << event
-                events.append(event)
-            ensure
-              @@logger.debug("EVENT AFTER APPENDING: #{events[0]}")  
-              # To get chunk_time_to_receive metrics per tag, corresponding latency and total records are calculated
-                if tag_metrics_set.has_key?(event.get("tag"))
-                    metricsLabels = tag_metrics_set[event.get("tag")]
-                    latency = metricsLabels.latency
-                    records_per_tag = metricsLabels.records_per_tag
-                else
-                    latency = 0
-                    records_per_tag = 0
-                end
-                latency += (current_f - time)
-                records_per_tag += 1
-                metricsLabels.latency = latency
-                metricsLabels.records_per_tag = records_per_tag
-                tag_metrics_set[event.get("tag")] = metricsLabels
-                if event.get("oci_la_log_group_id") != nil && !logGroup_labels_set.has_key?(event.get("oci_la_log_group_id"))
-                    logGroup_labels_set[event.get("oci_la_log_group_id")]  = metricsLabels
-                end
+              end
+              event.set("oci_la_log_set", processed_logSet)
+              tag_logSet_map[event.get("tag")] = processed_logSet
             end
-          else
-          @@logger.trace {"Record is nil, ignoring the record"}
+            # come back later - check fn
+            is_valid, metricsLabels.invalid_reason = is_valid_record(record_hash, event)
+
+            unless is_valid
+              if is_tag_exists
+                invalid_tag_set.add(event.get("tag"))
+                invalid_records_per_tag[event.get("tag")] = 1
+              end
+              next
+            end
+
+            metricsLabels.logGroupId = event.get("oci_la_log_group_id")
+            metricsLabels.logSourceName = event.get("oci_la_log_source_name")
+            if event.get("oci_la_log_set") != nil
+                metricsLabels.logSet = event.get("oci_la_log_set")
+            end
+            # come back later - check for now
+            event.set("message", json_message_handler("message", event.get("message")))
+
+
+            #This will check for null or empty messages and only that record will be ignored.
+            if !is_valid(event.get("message"))
+                metricsLabels.invalid_reason = OutOracleOCILogAnalytics::METRICS_INVALID_REASON_MESSAGE
+                if is_tag_exists
+                  if invalid_records_per_tag.has_key?(event.get("tag"))
+                    invalid_records_per_tag[event.get("tag")] += 1
+                  else
+                    invalid_records_per_tag[event.get("tag")] = 1
+                    @@logger.warn {"'message' field is empty or encoded, Skipping records associated with tag : #{revent.get("tag")}."}
+                  end
+                else
+                  @@logger.warn {"'message' field is empty or encoded, Skipping record."}
+                end
+                next
+            end
+
+            if record_hash.has_key?("kubernetes")
+              # come back later - check fn
+              event.set("oci_la_metadata", get_kubernetes_metadata(event.get("oci_la_metadata"),event))
+            end
+
+            if tag_metadata_map.has_key?(event.get("tag"))
+              event.set("oci_la_metadata", tag_metadata_map[event.get("tag")])
+            else
+              if record_hash.has_key?("oci_la_metadata")
+                  event.set("oci_la_metadata", get_valid_metadata(event.get("oci_la_metadata")))
+                  tags_per_logGroupId[event.get("tag")] = event.get("oci_la_metadata")
+              else
+                  tags_per_logGroupId[event.get("tag")] = nil
+              end
+            end
+
+            if is_tag_exists
+              if tags_per_logGroupId.has_key?(event.get("oci_la_log_group_id"))
+                if !tags_per_logGroupId[event.get("oci_la_log_group_id")].include?(event.get("tag"))
+                  tags_per_logGroupId[event.get("oci_la_log_group_id")] += ", "+event.get("tag")
+                end
+              else
+                tags_per_logGroupId[event.get("oci_la_log_group_id")] = event.get("tag")
+              end
+            end
+            # validating the timezone field
+            if !timezoneValuesByTag.has_key?(event.get("tag"))
+              begin
+                timezoneIdentifier = event.get("oci_la_timezone")
+                unless is_valid(timezoneIdentifier)
+                  event.set("oci_la_timezone", nil)
+                else
+                  isTimezoneExist = timezone_exist? timezoneIdentifier
+                  unless isTimezoneExist
+                    @@logger.warn { "Invalid timezone '#{timezoneIdentifier}', using default UTC." }
+                    event.set("oci_la_timezone", "UTC")
+                  end
+
+                end
+                timezoneValuesByTag[event.get("tag")] = event.get("oci_la_timezone")
+              end
+            else
+              event.set("oci_la_timezone", timezoneValuesByTag[event.get("tag")])
+            end
+
+            # events << event
+            @events_buffer << event
+          ensure
+            # check
+            # @@logger.debug("EVENT AFTER APPENDING: #{events[0]}")
+
+            # To get chunk_time_to_receive metrics per tag, corresponding latency and total records are calculated
+            if tag_metrics_set.has_key?(event.get("tag"))
+                metricsLabels = tag_metrics_set[event.get("tag")]
+                latency = metricsLabels.latency
+                records_per_tag = metricsLabels.records_per_tag
+            else
+                latency = 0
+                records_per_tag = 0
+            end
+            
+            latency += (current_f - time)
+            records_per_tag += 1
+            
+            metricsLabels.latency = latency
+            metricsLabels.records_per_tag = records_per_tag
+            tag_metrics_set[event.get("tag")] = metricsLabels
+
+            if event.get("oci_la_log_group_id") != nil && !logGroup_labels_set.has_key?(event.get("oci_la_log_group_id"))
+                logGroup_labels_set[event.get("oci_la_log_group_id")]  = metricsLabels
+            end
           end
-        end
-        @@logger.debug {"events.length:#{events.length}"}
-
-        # tag_metrics_set.each do |tag,metricsLabels|
-        #     latency_avg = (metricsLabels.latency / metricsLabels.records_per_tag).round(3)
-        #     @@prometheusMetrics.chunk_time_to_receive.observe(latency_avg, labels: { worker_id: metricsLabels.worker_id, tag: tag})
-        # end
-
-        lrpes_for_logGroupId = {}
-        la_log_test = -1
-        if events.empty?
-            @@logger.debug {"event array is empty"}
-          # la_log_test = events[0].get('oci_la_log_group_id')
         else
-          @@logger.debug {"EVENT ARRAY IS NOT EMPTY: #{events[0]}"}
+          @@logger.trace {"Record is nil, ignoring the record"}
         end
-        events.group_by{|event|
-                    oci_la_log_group_id = event.get('oci_la_log_group_id')
-                    (oci_la_log_group_id)
-                    }.map {|oci_la_log_group_id, records_per_logGroupId|
-                      lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
-                    }
-        rescue => ex
-          @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect} - id: #{la_log_test} - type: #{la_log_test.class}"}
+      end
+      @@logger.debug {"events.length:#{@events_buffer.length}"}
+
+      # tag_metrics_set.each do |tag,metricsLabels|
+      #     latency_avg = (metricsLabels.latency / metricsLabels.records_per_tag).round(3)
+      #     @@prometheusMetrics.chunk_time_to_receive.observe(latency_avg, labels: { worker_id: metricsLabels.worker_id, tag: tag})
+      # end
+
+      lrpes_for_logGroupId = {}
+      # events.group_by{|event|
+      #             oci_la_log_group_id = event.get('oci_la_log_group_id')
+      #             (oci_la_log_group_id)
+      #             }.map {|oci_la_log_group_id, records_per_logGroupId|
+      #               lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
+      #             }
+      @events_buffer.group_by{|event|
+                  oci_la_log_group_id = event.get('oci_la_log_group_id')
+                  (oci_la_log_group_id)
+                  }.map {|oci_la_log_group_id, records_per_logGroupId|
+                    lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
+                  }
+      rescue => ex
+        @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
     end
     return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId,lrpes_for_logGroupId
+    end # end of mutex.synchronize
   end
 
   def timezone_exist?(tz)
@@ -980,12 +1075,12 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
         oci_la_log_set = event.get('oci_la_log_set')
         (oci_la_log_set)
       }.map { |oci_la_log_set, records_per_logSet|
-          if file_count % OutOracleOCILogAnalytics::MAX_FILES_PER_ZIP == 0
+          if file_count % MAX_FILES_PER_ZIP == 0
               records_per_logSet_map = Hash.new
           end
           records_per_logSet_map[oci_la_log_set] = records_per_logSet
           file_count += 1
-          if file_count % OutOracleOCILogAnalytics::MAX_FILES_PER_ZIP == 0
+          if file_count % MAX_FILES_PER_ZIP == 0
               logSets_per_logGroupId_map[file_count] = records_per_logSet_map
           end
       }
@@ -1025,12 +1120,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     zippedstream = Zip::OutputStream.write_buffer { |zos|
       records_per_logSet_map.each do |oci_la_log_set,records_per_logSet|
             lrpes_for_logEvents = records_per_logSet.group_by { |event| [
-              # record['oci_la_metadata'],
-              # record['oci_la_entity_id'],
-              # record['oci_la_entity_type'],
-              # record['oci_la_log_source_name'],
-              # record['oci_la_log_path'],
-              # record['oci_la_timezone']
               event.get('oci_la_metadata'),
               event.get('oci_la_entity_id'),
               event.get('oci_la_entity_type'),
@@ -1050,7 +1139,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
             @@logger.debug {"Added entry #{nextEntry} for oci_la_log_set #{oci_la_log_set} into the zip."}
             zos.put_next_entry(nextEntry)
             logEventsJsonFinal = LogEventsJson.new(oci_la_global_metadata,lrpes_for_logEvents)
-            zos.write Yajl.dump(logEventsJsonFinal.to_hash)
+            # zos.write Yajl.dump(logEventsJsonFinal.to_hash)
+            zos.write JSON.dump(logEventsJsonFinal.to_hash)
       end
     }
     zippedstream.rewind
@@ -1074,9 +1164,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       file.write(zippedstream.sysread)
       rescue => ex
                     @@logger.error {"Error occurred while saving zip file.
-                                    oci_la_log_group_id: oci_la_log_group_id,
-                                    fileLocation: @zip_file_location
-                                    fileName: fileName
+                                    oci_la_log_group_id: #{oci_la_log_group_id},
+                                    fileLocation: #{@zip_file_location}
+                                    fileName: #{fileName}
                                     error message: #{ex}"}
       ensure
         file.close unless file.nil?
@@ -1091,13 +1181,15 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       error_code = nil
       opts = { payload_type: "ZIP", opc_meta_properties:collection_src_prop}
 
-      response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
-                                      logGroupId=oci_la_log_group_id ,
-                                      uploadLogEventsFileDetails=zippedstream,
-                                      opts)
+      # come back later
+      # response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
+      #                                 logGroupId=oci_la_log_group_id ,
+      #                                 uploadLogEventsFileDetails=zippedstream,
+      #                                 opts)
+      
 
-      if !response.nil?  && response.status == 200 then
-        headers = response.headers
+      # if !response.nil?  && response.status == 200 then
+      #   headers = response.headers
         # if metricsLabels_array != nil
         #     metricsLabels_array.each { |metricsLabels|
         #       @@prometheusMetrics.records_posted.set(metricsLabels.records_valid, labels: { worker_id: metricsLabels.worker_id,
@@ -1108,25 +1200,25 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
         #     }
         # end
 
-        @@logger.info {"The payload has been successfully uploaded to logAnalytics -
-                        oci_la_log_group_id: #{oci_la_log_group_id},
-                        ConsumedRecords: #{number_of_records},
-                        Date: #{headers['date']},
-                        Time: #{headers['timecreated']},
-                        opc-request-id: #{headers['opc-request-id']},
-                        opc-object-id: #{headers['opc-object-id']}"}
-      end
+        #   @@logger.info {"The payload has been successfully uploaded to logAnalytics -
+        #                   oci_la_log_group_id: #{oci_la_log_group_id},
+        #                   ConsumedRecords: #{number_of_records},
+        #                   Date: #{headers['date']},
+        #                   Time: #{headers['timecreated']},
+        #                   opc-request-id: #{headers['opc-request-id']},
+        #                   opc-object-id: #{headers['opc-object-id']}"}
+        # end
       rescue OCI::Errors::ServiceError => serviceError
         error_code = serviceError.status_code
         case serviceError.status_code
             when 400
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_400
+              error_reason = METRICS_SERVICE_ERROR_REASON_400
               @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{serviceError.request_id}"}
               if plugin_retry_on_4xx
                 raise serviceError
               end
             when 401
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_401
+              error_reason = METRICS_SERVICE_ERROR_REASON_401
               @@logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
                               opc-request-id:#{serviceError.request_id}
                               message: #{serviceError.message}"}
@@ -1134,7 +1226,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
                 raise serviceError
               end
             when 404
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_404
+              error_reason = METRICS_SERVICE_ERROR_REASON_404
               @@logger.error {"oci upload exception : Error while uploading the payload. Authorization failed for given oci_la_log_group_id against given Tenancy Namespace.
                               oci_la_log_group_id: #{oci_la_log_group_id}
                               Namespace: #{@namespace}
@@ -1144,35 +1236,35 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
                 raise serviceError
               end
             when 429
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_429
+              error_reason = METRICS_SERVICE_ERROR_REASON_429
               @@logger.error {"oci upload exception : Error while uploading the payload. Too Many Requests - opc-request-id:#{serviceError.request_id}"}
               raise serviceError
             when 500
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_500
+              error_reason = METRICS_SERVICE_ERROR_REASON_500
               @@logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{serviceError.request_id}"}
               raise serviceError
 
             when 502
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_502
+              error_reason = METRICS_SERVICE_ERROR_REASON_502
               @@logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{serviceError.request_id}"}
               raise serviceError
 
             when 503
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_503
+              error_reason = METRICS_SERVICE_ERROR_REASON_503
               @@logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{serviceError.request_id}"}
               raise serviceError
 
             when 504
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_504
+              error_reason = METRICS_SERVICE_ERROR_REASON_504
               @@logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{serviceError.request_id}"}
               raise serviceError
 
             when 505
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_505
+              error_reason = METRICS_SERVICE_ERROR_REASON_505
               @@logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{serviceError.request_id}"}
               raise serviceError
             else
-              error_reason = OutOracleOCILogAnalytics::METRICS_SERVICE_ERROR_REASON_UNKNOWN
+              error_reason = METRICS_SERVICE_ERROR_REASON_UNKNOWN
               @@logger.error {"oci upload exception : Error while uploading the payload #{serviceError.message}"}
               raise serviceError
           end

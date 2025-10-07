@@ -21,5 +21,9 @@ Gem::Specification.new do |s|
   s.add_development_dependency "logstash-devutils"
   s.add_runtime_dependency "logstash-core-plugin-api", "~> 2.0"
   s.add_runtime_dependency "logstash-codec-plain"
+  # rubyzip version 2.0.0 or greater is incompatible with logstash - using 1.3.0
+  # s.add_runtime_dependency 'rubyzip', '~> 2.3.2'
+  # s.add_runtime_dependency 'rubyzip', '~> 1.3.0'
+  # s.add_runtime_dependency "yajl-ruby", '~> 1.4', '>= 1.4.3'
   s.add_runtime_dependency "oci", "~>2.16"
 end
