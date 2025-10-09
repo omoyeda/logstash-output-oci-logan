@@ -168,7 +168,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       raise LogStash::ConfigurationError, "Error in config file : invalid #{invalid_field_name}"
     end
 
-    # come back later: this might not be necessary
+    # come back later:
     # # Get the chunk_limit_size from conf as it's not available in the buffer_config
     # unless conf.elements(name: 'buffer').empty?
     #   buffer_conf = conf.elements(name: 'buffer').first
@@ -255,12 +255,11 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # This function is resposible for getting the events from Logstash
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
-    # events_encoded.each do |event, data|
-    #   $stdout.write(data)
-    # end
 
     # write
     # @@logger.info {"Received new events, started processing ..."}
+
+    # @mutex.synchronize do
     begin
       # Create an in-memory zipfile for the given LogStash event
       begin
@@ -355,6 +354,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
         end
       end
     end
+  # end # end of mutex.synchronize
   end
 
   def initialize_logger()
@@ -802,7 +802,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   end
 
   def group_by_logGroupId(events_encoded)
-    @mutex.synchronize do
+    # @mutex.synchronize do
     begin
       current  = Time.now
       current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
@@ -1038,7 +1038,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
         @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
     end
     return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId,lrpes_for_logGroupId
-    end # end of mutex.synchronize
+    # end # end of mutex.synchronize
   end
 
   def timezone_exist?(tz)
