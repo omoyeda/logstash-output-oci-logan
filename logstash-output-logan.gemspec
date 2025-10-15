@@ -26,4 +26,5 @@ Gem::Specification.new do |s|
   # s.add_runtime_dependency 'rubyzip', '~> 1.3.0'
   # s.add_runtime_dependency "yajl-ruby", '~> 1.4', '>= 1.4.3'
   s.add_runtime_dependency "oci", "~>2.16"
+  s.add_runtime_dependency 'concurrent-ruby'
 end

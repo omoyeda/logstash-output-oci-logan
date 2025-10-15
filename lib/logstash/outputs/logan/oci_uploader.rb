@@ -23,11 +23,12 @@ class Uploader
   METRICS_SERVICE_ERROR_REASON_505 = "HTTP_VERSION_NOT_SUPPORTED"
   METRICS_SERVICE_ERROR_REASON_UNKNOWN = "UNKNOWN_ERROR"
 
-  def initialize(dump_zip_file, loganalytics_client, collection_source, logger)
+  def initialize(dump_zip_file, loganalytics_client, collection_source, zip_file_location, logger)
     @@logger = logger
     @collection_source = collection_source
     @dump_zip_file = dump_zip_file
     @@loganalytics_client = loganalytics_client
+    @zip_file_location = zip_file_location
     @metricsLabels_array = []
     @logGroup_metrics_map = Hash.new
   end
@@ -352,5 +353,13 @@ class Uploader
       end
     end
     collections_src
+  end
+
+  def is_valid(field)
+    if field.nil? || field.empty? then
+      return false
+    else
+      return true
+    end
   end
 end

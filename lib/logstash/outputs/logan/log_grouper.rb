@@ -16,16 +16,34 @@ class LogGroup
   def initialize(logger)
     @@logger = logger
     # @mutex = Mutex.new
-    @events_buffer = []
+    # @events_buffer = []
+  end
+
+  def _group_by_logGroupId(events_encoded)
+    @@logger.debug{"MINIMAL VERSION - events_encoded size: #{events_encoded.size}"}
+
+    events_buffer = []
+    events_encoded.each do |event, encoded|
+      next if encoded.nil?
+      events_buffer << event
+    end
+
+    @@logger.debug{"events_buffer: #{events_buffer.size}"}
+
+    # simple grouping
+    lrpes_for_logGroupId = events_buffer.group_by { |e| e.get('oci_la_log_group_id')}
+
+    @@logger.debug{"Grouped into #{lrpes_for_logGroupId.size} groups"}
+
+    return {}, {}, {}, {}, {}, lrpes_for_logGroupId
   end
 
   def group_by_logGroupId(events_encoded)
     # @mutex.synchronize do
     begin
-      # @@logger.debug{"events in group_by_logGroupId: #{events_encoded}"}
       current = Time.now
       current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
-      @events_buffer = []
+      events_buffer = []
       latency = 0
       records_per_tag = 0
 
@@ -48,6 +66,7 @@ class LogGroup
         if !encoded.nil?
           begin
             record_hash = event.to_hash
+            # @@logger.debug{"Processing event ##{incoming_records}. Encoded: #{encoded}"}
             if record_hash.has_key?("worker_id") && is_valid(event.get("worker_id"))
                 metricsLabels.worker_id = event.get("worker_id")# ||= '0'
                 @@worker_id = event.get("worker_id")# ||= '0'
@@ -199,10 +218,14 @@ class LogGroup
               event.set("oci_la_timezone", timezoneValuesByTag[event.get("tag")])
             end
             # @mutex.synchronize do
-            #   @events_buffer << event
+            # check
+            # @@logger.debug("Event before appending: #{event}")
+            events_buffer << event
+            # check
+            # @@logger.debug("Added event to buffer. Buffer size: #{events_buffer.size}")
             # end
           ensure
-
+            @@logger.debug("Events in ensure: #{events_buffer.length}")
             # To get chunk_time_to_receive metrics per tag, corresponding latency and total records are calculated
             if tag_metrics_set.has_key?(event.get("tag"))
                 metricsLabels = tag_metrics_set[event.get("tag")]
@@ -215,6 +238,7 @@ class LogGroup
             
             latency += (current_f - time)
             records_per_tag += 1
+            @@logger.debug("Events in MID-ensure: #{events_buffer.length}")
             
             metricsLabels.latency = latency
             metricsLabels.records_per_tag = records_per_tag
@@ -224,11 +248,12 @@ class LogGroup
                 logGroup_labels_set[event.get("oci_la_log_group_id")]  = metricsLabels
             end
           end
+          @@logger.debug("Events AFTER ensure: #{events_buffer.length}")
         else
           @@logger.trace {"Record is nil, ignoring the record"}
         end
       end
-      @@logger.debug {"events.length:#{@events_buffer.length}"}
+      @@logger.debug {"events.length:#{events_buffer.length}"}
 
       # tag_metrics_set.each do |tag,metricsLabels|
       #     latency_avg = (metricsLabels.latency / metricsLabels.records_per_tag).round(3)
@@ -237,7 +262,7 @@ class LogGroup
       # @mutex.synchronize do
         lrpes_for_logGroupId = {}
         
-        @events_buffer.group_by{|event|
+        events_buffer.group_by{|event|
                     oci_la_log_group_id = event.get('oci_la_log_group_id')
                     (oci_la_log_group_id)
                     }.map {|oci_la_log_group_id, records_per_logGroupId|
@@ -411,6 +436,14 @@ class LogGroup
       end
     else
       return nil
+    end
+  end
+
+  def is_valid(field)
+    if field.nil? || field.empty? then
+      return false
+    else
+      return true
     end
   end
 end
