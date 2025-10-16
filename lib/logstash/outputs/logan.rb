@@ -53,7 +53,6 @@ end
 # An logan output that does nothing.
 class LogStash::Outputs::Logan < LogStash::Outputs::Base
   config_name "logan"
-
   concurrency :single
   default :codec, "line"
 
@@ -148,14 +147,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       raise LogStash::ConfigurationError, "Error in config file : invalid #{invalid_field_name}"
     end
 
-    # Configure concurrency
-    @pool = Concurrent::ThreadPoolExecutor.new(
-      min_threads: 1,
-      max_threads: [Concurrent.processor_count, 4].min,
-      max_queue: 100,
-      fallback_policy: :caller_runs
-    )
-
     @mutex = Mutex.new
     # @log_grouper = LogGroup.new(@@logger)
     @oci_uploader = Uploader.new(@dump_zip_file, @@loganalytics_client, @collection_source, @zip_file_location, @@logger)
@@ -165,26 +156,17 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # This function is resposible for getting the events from Logstash
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
-    # log_grouper = LogGroup.new(@@logger)
-    # incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
-    # tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
-    
-    # @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
-    # @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
-
-    Concurrent::Future.execute(executor: @pool) do
-      process_batch_isolated(events_encoded)
-    end
-  end
-
-  def process_batch_isolated(events_encoded)
     log_grouper = LogGroup.new(@@logger)
     incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
     tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
-    @mutex.synchronize do
-      @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
-      @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
-    end
+    
+    @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
+    @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
+
+    # one chunk at a time
+    # how much time to process the messages - 
+    # check if multi threading is enabled by default
+    # find equivalent to buffer in logstash to prevent data loss
   end
 
   # logger

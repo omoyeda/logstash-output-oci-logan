@@ -12,11 +12,30 @@ class LogGroup
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
   
-#   attr_accessor :entityId, :entityType
   def initialize(logger)
     @@logger = logger
-    # @mutex = Mutex.new
-    # @events_buffer = []
+  end
+
+  def _group_by_logGroupId(events_encoded)
+    current = Time.now
+    current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
+    events
+    latency = 0
+    records_per_tag = 0
+
+    events_encoded.each do |event, encoded|
+      next if encoded.nil?
+      events << event
+    end
+
+    @@logger.debug{"events: #{events.size}"}
+
+    # simple grouping
+    lrpes_for_logGroupId = events.group_by { |e| e.get('oci_la_log_group_id')}
+
+    @@logger.debug{"grouped into #{lrpes_for_logGroupId.size} groups"}
+
+    return {}, {}, {}, {}, {}, lrpes_for_logGroupId
   end
 
   def _group_by_logGroupId(events_encoded)
@@ -33,13 +52,12 @@ class LogGroup
     # simple grouping
     lrpes_for_logGroupId = events_buffer.group_by { |e| e.get('oci_la_log_group_id')}
 
-    @@logger.debug{"Grouped into #{lrpes_for_logGroupId.size} groups"}
+    @@logger.debug{"grouped into #{lrpes_for_logGroupId.size} groups"}
 
     return {}, {}, {}, {}, {}, lrpes_for_logGroupId
   end
 
   def group_by_logGroupId(events_encoded)
-    # @mutex.synchronize do
     begin
       current = Time.now
       current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
@@ -58,15 +76,15 @@ class LogGroup
       tag_metadata_map = Hash.new
       timezoneValuesByTag = Hash.new
       incoming_records = 0
+      lrpes_for_logGroupId = {}
       
       events_encoded.each do |event, encoded|
-        time = event.get('@timestamp').time.strftime("%Y%m%dT%H%M%S%9NZ")
+        time = event.get('@timestamp').time.to_f
         incoming_records += 1
         metricsLabels = MetricsLabels.new
-        if !encoded.nil?
+        if is_valid(encoded)
           begin
             record_hash = event.to_hash
-            # @@logger.debug{"Processing event ##{incoming_records}. Encoded: #{encoded}"}
             if record_hash.has_key?("worker_id") && is_valid(event.get("worker_id"))
                 metricsLabels.worker_id = event.get("worker_id")# ||= '0'
                 @@worker_id = event.get("worker_id")# ||= '0'
@@ -89,11 +107,11 @@ class LogGroup
             end
             #Setting tag/default value for oci_la_log_path, when not provided in config file.
             if !record_hash.has_key?("oci_la_log_path") || !is_valid(event.get("oci_la_log_path"))
-                  if is_tag_exists
-                    event.set("oci_la_log_path", event.get("tag"))
-                  else
-                    event.set("oci_la_log_path", 'UNDEFINED')
-                  end
+              if is_tag_exists
+                event.set("oci_la_log_path", event.get("tag"))
+              else
+                event.set("oci_la_log_path", 'UNDEFINED')
+              end
             end
 
             #Extracting oci_la_log_set when oci_la_log_set_key and oci_la_log_set_ext_regex is provided.
@@ -122,7 +140,6 @@ class LogGroup
                   if is_valid(event.get("oci_la_log_set_key")) && record_hash.has_key?(event.get("oci_la_log_set_key"))
                       if is_valid(event.get(event.get("oci_la_log_set_key")))
                           unparsed_logSet = event.get(event.get("oci_la_log_set_key"))
-                          # come back later - check fn
                           processed_logSet = get_or_parse_logSet(unparsed_logSet, event, record_hash,is_tag_exists)
                       end
                   end
@@ -130,14 +147,12 @@ class LogGroup
               if !is_valid(processed_logSet) && record_hash.has_key?("oci_la_log_set")
                   if is_valid(event.get("oci_la_log_set"))
                       unparsed_logSet = event.get("oci_la_log_set")
-                      # come back later - check fn
                       processed_logSet = get_or_parse_logSet(unparsed_logSet, event, record_hash,is_tag_exists)
                   end
               end
               event.set("oci_la_log_set", processed_logSet)
               tag_logSet_map[event.get("tag")] = processed_logSet
             end
-            # come back later - check fn
             is_valid, metricsLabels.invalid_reason = is_valid_record(record_hash, event)
 
             unless is_valid
@@ -153,9 +168,7 @@ class LogGroup
             if event.get("oci_la_log_set") != nil
                 metricsLabels.logSet = event.get("oci_la_log_set")
             end
-            # come back later - check for now
             event.set("message", json_message_handler("message", event.get("message")))
-
 
             #This will check for null or empty messages and only that record will be ignored.
             if !is_valid(event.get("message"))
@@ -174,7 +187,6 @@ class LogGroup
             end
 
             if record_hash.has_key?("kubernetes")
-              # come back later - check fn
               event.set("oci_la_metadata", get_kubernetes_metadata(event.get("oci_la_metadata"),event))
             end
 
@@ -217,15 +229,8 @@ class LogGroup
             else
               event.set("oci_la_timezone", timezoneValuesByTag[event.get("tag")])
             end
-            # @mutex.synchronize do
-            # check
-            # @@logger.debug("Event before appending: #{event}")
             events_buffer << event
-            # check
-            # @@logger.debug("Added event to buffer. Buffer size: #{events_buffer.size}")
-            # end
           ensure
-            @@logger.debug("Events in ensure: #{events_buffer.length}")
             # To get chunk_time_to_receive metrics per tag, corresponding latency and total records are calculated
             if tag_metrics_set.has_key?(event.get("tag"))
                 metricsLabels = tag_metrics_set[event.get("tag")]
@@ -238,7 +243,6 @@ class LogGroup
             
             latency += (current_f - time)
             records_per_tag += 1
-            @@logger.debug("Events in MID-ensure: #{events_buffer.length}")
             
             metricsLabels.latency = latency
             metricsLabels.records_per_tag = records_per_tag
@@ -248,32 +252,25 @@ class LogGroup
                 logGroup_labels_set[event.get("oci_la_log_group_id")]  = metricsLabels
             end
           end
-          @@logger.debug("Events AFTER ensure: #{events_buffer.length}")
         else
           @@logger.trace {"Record is nil, ignoring the record"}
         end
       end
-      @@logger.debug {"events.length:#{events_buffer.length}"}
 
       # tag_metrics_set.each do |tag,metricsLabels|
       #     latency_avg = (metricsLabels.latency / metricsLabels.records_per_tag).round(3)
       #     @@prometheusMetrics.chunk_time_to_receive.observe(latency_avg, labels: { worker_id: metricsLabels.worker_id, tag: tag})
       # end
-      # @mutex.synchronize do
-        lrpes_for_logGroupId = {}
-        
-        events_buffer.group_by{|event|
-                    oci_la_log_group_id = event.get('oci_la_log_group_id')
-                    (oci_la_log_group_id)
-                    }.map {|oci_la_log_group_id, records_per_logGroupId|
-                      lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
-                    }
-      # end
-      rescue => ex
-        @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
+      events_buffer.group_by{|event|
+                  oci_la_log_group_id = event.get('oci_la_log_group_id')
+                  (oci_la_log_group_id)
+                  }.map {|oci_la_log_group_id, records_per_logGroupId|
+                    lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
+                  }
+    rescue => ex
+      @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
     end
     return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId,lrpes_for_logGroupId
-    # end # end of mutex.sync
   end
 
   def get_or_parse_logSet(unparsed_logSet, event, record_hash, is_tag_exists)
