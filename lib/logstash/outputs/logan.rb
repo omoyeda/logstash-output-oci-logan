@@ -5,7 +5,6 @@ require "logstash/outputs/base"
 # require 'yajl'
 # require 'yajl/json_gem'
 require 'logger'
-require 'concurrent'
 
 require_relative 'logan/log_grouper'
 require_relative 'logan/oci_client'
@@ -70,9 +69,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # Sets the mandatory OCI Tenancy Namespace to which the collected log data will be uploaded
   config :namespace, :validate => :string, :default => nil, :required => true
   # OCI config file location. Used for session
-  config :config_file_location, :validate => :string, :default => nil
+  config :config_file_location, :validate => :string, :default => nil, :required => true
   # Name of the profile to be used
-  config :profile_name, :validate => :string, :default => 'DEFAULT'
+  config :profile_name, :validate => :string, :default => 'DEFAULT', :required => true
   # OCI endpoint
   config :endpoint, :validate => :string, :default => nil
   # AuthType to be used
@@ -134,12 +133,13 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     end
   
     initialize_logger()
-    # @client = Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
+    @client = Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
 
     # @@prometheusMetrics = PrometheusMetrics.instance
     
-    # wait until config file is done
-    # @@loganalytics_client = @client.initialize_loganalytics_client()
+    @client.initialize_loganalytics_client()
+    @@loganalytics_client = @client.loganalytics_client
+    @@logger.debug{"Client in main -- : #{@@loganalytics_client.class}"}
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
     if !is_mandatory_fields_valid
@@ -147,9 +147,10 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       raise LogStash::ConfigurationError, "Error in config file : invalid #{invalid_field_name}"
     end
 
-    @mutex = Mutex.new
+    # @mutex = Mutex.new
     # @log_grouper = LogGroup.new(@@logger)
-    @oci_uploader = Uploader.new(@dump_zip_file, @@loganalytics_client, @collection_source, @zip_file_location, @@logger)
+    @oci_uploader = Uploader.new(@namespace, @dump_zip_file, @@loganalytics_client, @collection_source,
+                                 @zip_file_location, @plugin_retry_on_4xx, @@logger)
   end
 
   # Default function for the plugin

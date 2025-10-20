@@ -41,7 +41,11 @@ class Client
     @proxy_port = proxy_port
     @proxy_username = proxy_username
     @proxy_password = proxy_password
+
+    @loganalytics_client = nil
   end
+
+  attr_reader :loganalytics_client
 
   # This function authenticates to a client so it can later be used to send Logs to OCI.
   def initialize_loganalytics_client()
@@ -68,7 +72,7 @@ class Client
         la_endpoint = "https://loganalytics.#{@oci_domain}"
         @@logger.info "Initializing loganalytics_client with custom domain endpoint: #{la_endpoint}"
       end
-      @@loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(
+      @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(
         config: OCI::Config.new,
         endpoint: la_endpoint,
         signer: instance_principals_signer)
@@ -83,7 +87,7 @@ class Client
         la_endpoint = "https://loganalytics.#{@oci_domain}"
         @@logger.info "Initializing loganalytics_client with custom domain endpoint: #{la_endpoint}"
       end
-      @@loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(
+      @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(
         config: OCI::Config.new,
         endpoint: la_endpoint,
         signer: workload_identity_signer)
@@ -100,17 +104,17 @@ class Client
         la_endpoint = "https://loganalytics.#{@oci_domain}"
         @@logger.info "Initializing loganalytics_client with custom domain endpoint: #{la_endpoint}"
       end
-      @@loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(config: my_config, endpoint: la_endpoint)
-      @@logger.info 'loganalytics_client initialised'
+      @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(config: my_config, endpoint: la_endpoint)
+      @@logger.info 'loganalytics_client initialized'
     else
       raise LogStash::ConfigurationError, "Invalid authType: #{@auth_type}, valid inputs are -  InstancePrincipal, ConfigFile, WorkloadIdentity"
     end
 
     if is_valid(@proxy_ip) && is_number(@proxy_port)
         if is_valid(@proxy_username)  && is_valid(@proxy_password)
-          @@loganalytics_client.api_client.proxy_settings = OCI::ApiClientProxySettings.new(@proxy_ip, @proxy_port, @proxy_username, @proxy_password)
+          @loganalytics_client.api_client.proxy_settings = OCI::ApiClientProxySettings.new(@proxy_ip, @proxy_port, @proxy_username, @proxy_password)
         else
-          @@loganalytics_client.api_client.proxy_settings = OCI::ApiClientProxySettings.new(@proxy_ip, @proxy_port)
+          @loganalytics_client.api_client.proxy_settings = OCI::ApiClientProxySettings.new(@proxy_ip, @proxy_port)
         end
     end
 
@@ -118,8 +122,6 @@ class Client
       @@logger.error {"Error occurred while initializing LogAnalytics Client:
                           authType: #{@auth_type},
                           errorMessage: #{ex}"}
-
-    return @@loganalytics_client
   end
 
   def is_valid(field)

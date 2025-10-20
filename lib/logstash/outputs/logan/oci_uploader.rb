@@ -23,12 +23,14 @@ class Uploader
   METRICS_SERVICE_ERROR_REASON_505 = "HTTP_VERSION_NOT_SUPPORTED"
   METRICS_SERVICE_ERROR_REASON_UNKNOWN = "UNKNOWN_ERROR"
 
-  def initialize(dump_zip_file, loganalytics_client, collection_source, zip_file_location, logger)
+  def initialize(namespace, dump_zip_file, loganalytics_client, collection_source, zip_file_location, plugin_retry_on_4xx, logger)
+    @namespace = namespace
     @@logger = logger
     @collection_source = collection_source
     @dump_zip_file = dump_zip_file
     @@loganalytics_client = loganalytics_client
     @zip_file_location = zip_file_location
+    @plugin_retry_on_4xx = plugin_retry_on_4xx
     @metricsLabels_array = []
     @logGroup_metrics_map = Hash.new
   end
@@ -37,19 +39,19 @@ class Uploader
   def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, metricsLabels_array)
     begin
       collection_src_prop = getCollectionSource(@collection_source)
-      # error_reason = nil
+      error_reason = nil
       error_code = nil
       opts = { payload_type: "ZIP", opc_meta_properties:collection_src_prop}
 
       # come back later
-      # response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
-      #                                 logGroupId=oci_la_log_group_id ,
-      #                                 uploadLogEventsFileDetails=zippedstream,
-      #                                 opts)
+      response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
+                                      logGroupId=oci_la_log_group_id ,
+                                      uploadLogEventsFileDetails=zippedstream,
+                                      opts)
       
 
-      # if !response.nil?  && response.status == 200 then
-      #   headers = response.headers
+      if !response.nil?  && response.status == 200 then
+        headers = response.headers
         # if metricsLabels_array != nil
         #     metricsLabels_array.each { |metricsLabels|
         #       @@prometheusMetrics.records_posted.set(metricsLabels.records_valid, labels: { worker_id: metricsLabels.worker_id,
@@ -60,21 +62,21 @@ class Uploader
         #     }
         # end
 
-        #   @@logger.info {"The payload has been successfully uploaded to logAnalytics -
-        #                   oci_la_log_group_id: #{oci_la_log_group_id},
-        #                   ConsumedRecords: #{number_of_records},
-        #                   Date: #{headers['date']},
-        #                   Time: #{headers['timecreated']},
-        #                   opc-request-id: #{headers['opc-request-id']},
-        #                   opc-object-id: #{headers['opc-object-id']}"}
-        # end
+        @@logger.info {"The payload has been successfully uploaded to logAnalytics -
+                        oci_la_log_group_id: #{oci_la_log_group_id},
+                        ConsumedRecords: #{number_of_records},
+                        Date: #{headers['date']},
+                        Time: #{headers['timecreated']},
+                        opc-request-id: #{headers['opc-request-id']},
+                        opc-object-id: #{headers['opc-object-id']}"}
+      end
       rescue OCI::Errors::ServiceError => serviceError
         error_code = serviceError.status_code
         case serviceError.status_code
             when 400
               error_reason = METRICS_SERVICE_ERROR_REASON_400
               @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{serviceError.request_id}"}
-              if plugin_retry_on_4xx
+              if @plugin_retry_on_4xx
                 raise serviceError
               end
             when 401
@@ -82,7 +84,7 @@ class Uploader
               @@logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
                               opc-request-id:#{serviceError.request_id}
                               message: #{serviceError.message}"}
-              if plugin_retry_on_4xx
+              if @plugin_retry_on_4xx
                 raise serviceError
               end
             when 404
@@ -92,7 +94,7 @@ class Uploader
                               Namespace: #{@namespace}
                               opc-request-id: #{serviceError.request_id}
                               message: #{serviceError.message}"}
-              if plugin_retry_on_4xx
+              if @plugin_retry_on_4xx
                 raise serviceError
               end
             when 429
@@ -147,7 +149,7 @@ class Uploader
 
   def setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
     valid_message_per_tag = Hash.new
-    # logGroup_metrics_map = Hash.new
+    logGroup_metrics_map = Hash.new
     # metricsLabels_array = []
 
     incoming_records_per_tag.each do |key,value|
