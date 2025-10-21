@@ -69,9 +69,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # Sets the mandatory OCI Tenancy Namespace to which the collected log data will be uploaded
   config :namespace, :validate => :string, :default => nil, :required => true
   # OCI config file location. Used for session
-  config :config_file_location, :validate => :string, :default => nil, :required => true
+  config :config_file_location, :validate => :string, :default => nil
   # Name of the profile to be used
-  config :profile_name, :validate => :string, :default => 'DEFAULT', :required => true
+  config :profile_name, :validate => :string, :default => 'DEFAULT'
   # OCI endpoint
   config :endpoint, :validate => :string, :default => nil
   # AuthType to be used
@@ -123,6 +123,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   config :retry_type, :validate => ["exponential_backoff", "fixed"]
   config :flush_thread_count, :validate => :number, :default => 1
 
+  # The kubernetes_metadata_keys_mapping
+  config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {"container_name":"Container",
+          "namespace_name":"Namespace", "pod_name":"Pod","container_image":"Container Image Name","host":"Node"}
   config :collection_source, :validate => :string, :default => Source::LOGSTASH
 
   # Default function for the plugin - same as initilize method, meant to enforce having super called
@@ -157,7 +160,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # This function is resposible for getting the events from Logstash
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
-    log_grouper = LogGroup.new(@@logger)
+    log_grouper = LogGroup.new(@@logger, @kubernetes_metadata_keys_mapping)
     incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
     tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
     
@@ -232,9 +235,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
           @@logger.warn {"#{logger_config_error}"}
           }
       end
-      if is_valid_log_age(@plugin_log_age)
-          @@logger.warn {"'plugin_log_age' field is deprecated. Use 'plugin_log_file_size' and 'plugin_log_file_count' instead."}
-      end
     rescue => ex
       # @@logger = log
       @@logger = Logger.new(STDOUT)
@@ -264,22 +264,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
           return true
         else
           @@logger_config_error << "Only 'daily'/'weekly'/'monthly' are supported for 'plugin_log_rotation'."
-          return false
-      end
-  end
-
-  def is_valid_log_age(param)
-    if !is_valid(param)
-      return false
-    end
-    case param.downcase
-        when "daily"
-          return true
-        when "weekly"
-          return true
-        when "monthly"
-          return true
-        else
           return false
       end
   end

@@ -12,8 +12,9 @@ class LogGroup
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
   
-  def initialize(logger)
+  def initialize(logger, kubernetes_metadata_keys_mapping)
     @@logger = logger
+    @kubernetes_metadata_keys_mapping = kubernetes_metadata_keys_mapping
   end
 
   def _group_by_logGroupId(events_encoded)
@@ -370,9 +371,9 @@ class LogGroup
     end
     kubernetes_metadata = flatten(event.get("kubernetes"))
     kubernetes_metadata.each do |key, value|
-      if kubernetes_metadata_keys_mapping.has_key?(key)
-          if !is_valid(oci_la_metadata[kubernetes_metadata_keys_mapping[key]])
-            oci_la_metadata[kubernetes_metadata_keys_mapping[key]] = json_message_handler(key, value)
+      if @kubernetes_metadata_keys_mapping.has_key?(key)
+          if !is_valid(oci_la_metadata[@kubernetes_metadata_keys_mapping[key]])
+            oci_la_metadata[@kubernetes_metadata_keys_mapping[key]] = json_message_handler(key, value)
           end
       end
     end
