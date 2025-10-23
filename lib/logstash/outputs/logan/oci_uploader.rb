@@ -23,7 +23,7 @@ class Uploader
   METRICS_SERVICE_ERROR_REASON_505 = "HTTP_VERSION_NOT_SUPPORTED"
   METRICS_SERVICE_ERROR_REASON_UNKNOWN = "UNKNOWN_ERROR"
 
-  def initialize(namespace, dump_zip_file, loganalytics_client, collection_source, zip_file_location, plugin_retry_on_4xx, logger)
+  def initialize(namespace, dump_zip_file, loganalytics_client, collection_source, zip_file_location, plugin_retry_on_4xx, retry_wait, retry_max_times, logger)
     @namespace = namespace
     @@logger = logger
     @collection_source = collection_source
@@ -31,19 +31,21 @@ class Uploader
     @@loganalytics_client = loganalytics_client
     @zip_file_location = zip_file_location
     @plugin_retry_on_4xx = plugin_retry_on_4xx
+    @retry_wait = retry_wait
+    @retry_max_times = retry_max_times
     @metricsLabels_array = []
     @logGroup_metrics_map = Hash.new
   end
   
   # upload zipped stream to oci
   def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, metricsLabels_array)
+    tries = 0
     begin
       collection_src_prop = getCollectionSource(@collection_source)
       error_reason = nil
       error_code = nil
       opts = { payload_type: "ZIP", opc_meta_properties:collection_src_prop}
 
-      # come back later
       response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
                                       logGroupId=oci_la_log_group_id ,
                                       uploadLogEventsFileDetails=zippedstream,
@@ -70,80 +72,88 @@ class Uploader
                         opc-request-id: #{headers['opc-request-id']},
                         opc-object-id: #{headers['opc-object-id']}"}
       end
-      rescue OCI::Errors::ServiceError => serviceError
-        error_code = serviceError.status_code
-        case serviceError.status_code
-            when 400
-              error_reason = METRICS_SERVICE_ERROR_REASON_400
-              @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{serviceError.request_id}"}
-              if @plugin_retry_on_4xx
-                raise serviceError
-              end
-            when 401
-              error_reason = METRICS_SERVICE_ERROR_REASON_401
-              @@logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
-                              opc-request-id:#{serviceError.request_id}
-                              message: #{serviceError.message}"}
-              if @plugin_retry_on_4xx
-                raise serviceError
-              end
-            when 404
-              error_reason = METRICS_SERVICE_ERROR_REASON_404
-              @@logger.error {"oci upload exception : Error while uploading the payload. Authorization failed for given oci_la_log_group_id against given Tenancy Namespace.
-                              oci_la_log_group_id: #{oci_la_log_group_id}
-                              Namespace: #{@namespace}
-                              opc-request-id: #{serviceError.request_id}
-                              message: #{serviceError.message}"}
-              if @plugin_retry_on_4xx
-                raise serviceError
-              end
-            when 429
-              error_reason = METRICS_SERVICE_ERROR_REASON_429
-              @@logger.error {"oci upload exception : Error while uploading the payload. Too Many Requests - opc-request-id:#{serviceError.request_id}"}
-              raise serviceError
-            when 500
-              error_reason = METRICS_SERVICE_ERROR_REASON_500
-              @@logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{serviceError.request_id}"}
-              raise serviceError
-
-            when 502
-              error_reason = METRICS_SERVICE_ERROR_REASON_502
-              @@logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{serviceError.request_id}"}
-              raise serviceError
-
-            when 503
-              error_reason = METRICS_SERVICE_ERROR_REASON_503
-              @@logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{serviceError.request_id}"}
-              raise serviceError
-
-            when 504
-              error_reason = METRICS_SERVICE_ERROR_REASON_504
-              @@logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{serviceError.request_id}"}
-              raise serviceError
-
-            when 505
-              error_reason = METRICS_SERVICE_ERROR_REASON_505
-              @@logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{serviceError.request_id}"}
-              raise serviceError
-            else
-              error_reason = METRICS_SERVICE_ERROR_REASON_UNKNOWN
-              @@logger.error {"oci upload exception : Error while uploading the payload #{serviceError.message}"}
-              raise serviceError
+    rescue OCI::Errors::ServiceError => serviceError
+      error_code = serviceError.status_code
+      case serviceError.status_code
+        when 400
+          error_reason = METRICS_SERVICE_ERROR_REASON_400
+          @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{serviceError.request_id}"}
+          if @plugin_retry_on_4xx
+            raise serviceError
           end
-        rescue => ex
-            error_reason = ex
-            @@logger.error {"oci upload exception : Error while uploading the payload. #{ex}"}
-        # ensure
-        #     if error_reason != nil && metricsLabels_array != nil
-        #         metricsLabels_array.each { |metricsLabels|
-        #           @@prometheusMetrics.records_error.set(metricsLabels.records_valid, labels: {worker_id: metricsLabels.worker_id,
-        #                                                                                 tag: metricsLabels.tag,
-        #                                                                                 oci_la_log_group_id: metricsLabels.logGroupId,
-        #                                                                                 oci_la_log_source_name: metricsLabels.logSourceName,
-        #                                                                                 oci_la_log_set: metricsLabels.logSet,
-        #                                                                                 error_code: error_code,
-        #                                                                                 reason: error_reason})
-        #         }
+        when 401
+          error_reason = METRICS_SERVICE_ERROR_REASON_401
+          @@logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
+                          opc-request-id:#{serviceError.request_id}
+                          message: #{serviceError.message}"}
+          if @plugin_retry_on_4xx
+            raise serviceError
+          end
+        when 404
+          error_reason = METRICS_SERVICE_ERROR_REASON_404
+          @@logger.error {"oci upload exception : Error while uploading the payload. Authorization failed for given oci_la_log_group_id against given Tenancy Namespace.
+                          oci_la_log_group_id: #{oci_la_log_group_id}
+                          Namespace: #{@namespace}
+                          opc-request-id: #{serviceError.request_id}
+                          message: #{serviceError.message}"}
+          if @plugin_retry_on_4xx
+            raise serviceError
+          end
+        when 429
+          error_reason = METRICS_SERVICE_ERROR_REASON_429
+          @@logger.error {"oci upload exception : Error while uploading the payload. Too Many Requests - opc-request-id:#{serviceError.request_id}"}
+          raise serviceError
+        when 500
+          error_reason = METRICS_SERVICE_ERROR_REASON_500
+          @@logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{serviceError.request_id}"}
+          raise serviceError
+
+        when 502
+          error_reason = METRICS_SERVICE_ERROR_REASON_502
+          @@logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{serviceError.request_id}"}
+          raise serviceError
+
+        when 503
+          error_reason = METRICS_SERVICE_ERROR_REASON_503
+          @@logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{serviceError.request_id}"}
+          raise serviceError
+
+        when 504
+          error_reason = METRICS_SERVICE_ERROR_REASON_504
+          @@logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{serviceError.request_id}"}
+          raise serviceError
+
+        when 505
+          error_reason = METRICS_SERVICE_ERROR_REASON_505
+          @@logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{serviceError.request_id}"}
+          raise serviceError
+        else
+          error_reason = METRICS_SERVICE_ERROR_REASON_UNKNOWN
+          @@logger.error {"oci upload exception : Error while uploading the payload #{serviceError.message}"}
+          raise serviceError
+      end
+    rescue => ex
+      error_reason = ex
+      @@logger.error {"oci upload exception : Error while uploading the payload. #{ex}"}
+      # ensure
+      #     if error_reason != nil && metricsLabels_array != nil
+      #         metricsLabels_array.each { |metricsLabels|
+      #           @@prometheusMetrics.records_error.set(metricsLabels.records_valid, labels: {worker_id: metricsLabels.worker_id,
+      #                                                                                 tag: metricsLabels.tag,
+      #                                                                                 oci_la_log_group_id: metricsLabels.logGroupId,
+      #                                                                                 oci_la_log_source_name: metricsLabels.logSourceName,
+      #                                                                                 oci_la_log_set: metricsLabels.logSet,
+      #                                                                                 error_code: error_code,
+      #                                                                                 reason: error_reason})
+      #         }
+      if tries < @retry_max_times
+        tries += 1
+        @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times} attempts"}
+        sleep @retry_wait
+        retry
+      else
+        @@logger.error {"Failed to upload the payload - : retried #{@retry_max_times} times"}
+      end
     end
   end
 

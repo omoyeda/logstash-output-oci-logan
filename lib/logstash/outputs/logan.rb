@@ -49,7 +49,6 @@ module OCI
   end
 end
 
-# An logan output that does nothing.
 class LogStash::Outputs::Logan < LogStash::Outputs::Base
   config_name "logan"
   concurrency :single
@@ -112,16 +111,14 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # OCI Output plugin 4xx exception handling - Except '429'
   config :plugin_retry_on_4xx, :validate => :boolean, :default => false
 
-
-  ## ---------------------------------------------------------------
-  # Mutex related parameter for thread synchronization
+  
   # ---------------------------------------------------------------
-  #****************************************************************
-  # batch (or chunk) limit size
-  config :batch_size, :validate => :string, :default => "1m"
-  config :flush_interval, :validate => :number, :default => 10
-  config :retry_type, :validate => ["exponential_backoff", "fixed"]
-  config :flush_thread_count, :validate => :number, :default => 1
+  # Retry parameters
+  # ---------------------------------------------------------------
+  # Seconds to wait before next retry to flush, or constant factor of exponential backoff
+  config :retry_wait, :validate => :number, :default => 2 # seconds
+  # The maximum number of times to retry to upload payload while failing
+  config :retry_max_times, :validate => :number, :default => 17
 
   # The kubernetes_metadata_keys_mapping
   # config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {"container_name":"Container",
@@ -152,7 +149,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     # @mutex = Mutex.new
     # @log_grouper = LogGroup.new(@@logger)
     @oci_uploader = Uploader.new(@namespace, @dump_zip_file, @@loganalytics_client, @collection_source,
-                                 @zip_file_location, @plugin_retry_on_4xx, @@logger)
+                                 @zip_file_location, @plugin_retry_on_4xx, @retry_wait, @retry_max_times, @@logger)
   end
 
   # Default function for the plugin
