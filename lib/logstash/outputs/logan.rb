@@ -124,8 +124,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   config :flush_thread_count, :validate => :number, :default => 1
 
   # The kubernetes_metadata_keys_mapping
-  config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {"container_name":"Container",
-          "namespace_name":"Namespace", "pod_name":"Pod","container_image":"Container Image Name","host":"Node"}
+  # config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {"container_name":"Container",
+  #         "namespace_name":"Namespace", "pod_name":"Pod","container_image":"Container Image Name","host":"Node"}
   config :collection_source, :validate => :string, :default => Source::LOGSTASH
 
   # Default function for the plugin - same as initilize method, meant to enforce having super called
@@ -142,7 +142,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     
     @client.initialize_loganalytics_client()
     @@loganalytics_client = @client.loganalytics_client
-    @@logger.debug{"Client in main -- : #{@@loganalytics_client.class}"}
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
     if !is_mandatory_fields_valid
@@ -160,17 +159,12 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # This function is resposible for getting the events from Logstash
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
-    log_grouper = LogGroup.new(@@logger, @kubernetes_metadata_keys_mapping)
+    log_grouper = LogGroup.new(@@logger)
     incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
     tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
     
     @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
     @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
-
-    # one chunk at a time
-    # how much time to process the messages - 
-    # check if multi threading is enabled by default
-    # find equivalent to buffer in logstash to prevent data loss
   end
 
   # logger

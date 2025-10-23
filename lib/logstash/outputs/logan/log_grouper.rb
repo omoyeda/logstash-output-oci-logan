@@ -12,9 +12,9 @@ class LogGroup
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
   
-  def initialize(logger, kubernetes_metadata_keys_mapping)
+  def initialize(logger)
     @@logger = logger
-    @kubernetes_metadata_keys_mapping = kubernetes_metadata_keys_mapping
+    # @kubernetes_metadata_keys_mapping = kubernetes_metadata_keys_mapping
   end
 
   def _group_by_logGroupId(events_encoded)
