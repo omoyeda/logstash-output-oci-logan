@@ -132,6 +132,17 @@ class Uploader
           @@logger.error {"oci upload exception : Error while uploading the payload #{serviceError.message}"}
           raise serviceError
       end
+      # retry only on error codes 5XX
+      if error_code.between?(500,599)
+        if tries < @retry_max_times
+          tries += 1
+          @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times} attempts"}
+          sleep @retry_wait
+          retry
+        else
+          @@logger.error {"Failed to upload the payload - : retried #{@retry_max_times} times"}
+        end
+      end
     rescue => ex
       error_reason = ex
       @@logger.error {"oci upload exception : Error while uploading the payload. #{ex}"}

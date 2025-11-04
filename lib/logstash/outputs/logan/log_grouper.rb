@@ -78,8 +78,18 @@ class LogGroup
       timezoneValuesByTag = Hash.new
       incoming_records = 0
       lrpes_for_logGroupId = {}
+
+      # event_size = 0
       
       events_encoded.each do |event, encoded|
+        # event_size = event.to_json.bytesize
+        # event_size_mb = event_size / (1024.0 * 1024.0)
+        # @@logger.info{"--- EVENT SIZE IN BYTES: #{event_size} bytes ---"}
+        # @@logger.info{"--- EVENT SIZE IN MB: #{event_size_mb} mb ---"}
+        # # if(event_size_mb > EVENT_SIZE_LIMIT) {
+        # #   @@logger.warn {"Invalid Record. Record size is larger than 2MB."}
+        # # }
+        
         time = event.get('@timestamp').time.to_f
         incoming_records += 1
         metricsLabels = MetricsLabels.new
