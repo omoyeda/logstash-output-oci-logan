@@ -11,51 +11,14 @@ class LogGroup
   METRICS_INVALID_REASON_MESSAGE = "MISSING_FIELD_MESSAGE"
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
+
+  BATCH_SIZE_LIMIT = 2 * 1024 * 1024 # 2 MB
   
   def initialize(logger)
     @@logger = logger
+    @current_batch = []
+    @current_batch_size = 0
     # @kubernetes_metadata_keys_mapping = kubernetes_metadata_keys_mapping
-  end
-
-  def _group_by_logGroupId(events_encoded)
-    current = Time.now
-    current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
-    events
-    latency = 0
-    records_per_tag = 0
-
-    events_encoded.each do |event, encoded|
-      next if encoded.nil?
-      events << event
-    end
-
-    @@logger.debug{"events: #{events.size}"}
-
-    # simple grouping
-    lrpes_for_logGroupId = events.group_by { |e| e.get('oci_la_log_group_id')}
-
-    @@logger.debug{"grouped into #{lrpes_for_logGroupId.size} groups"}
-
-    return {}, {}, {}, {}, {}, lrpes_for_logGroupId
-  end
-
-  def _group_by_logGroupId(events_encoded)
-    @@logger.debug{"MINIMAL VERSION - events_encoded size: #{events_encoded.size}"}
-
-    events_buffer = []
-    events_encoded.each do |event, encoded|
-      next if encoded.nil?
-      events_buffer << event
-    end
-
-    @@logger.debug{"events_buffer: #{events_buffer.size}"}
-
-    # simple grouping
-    lrpes_for_logGroupId = events_buffer.group_by { |e| e.get('oci_la_log_group_id')}
-
-    @@logger.debug{"grouped into #{lrpes_for_logGroupId.size} groups"}
-
-    return {}, {}, {}, {}, {}, lrpes_for_logGroupId
   end
 
   def group_by_logGroupId(events_encoded)
@@ -78,18 +41,8 @@ class LogGroup
       timezoneValuesByTag = Hash.new
       incoming_records = 0
       lrpes_for_logGroupId = {}
-
-      # event_size = 0
       
       events_encoded.each do |event, encoded|
-        # event_size = event.to_json.bytesize
-        # event_size_mb = event_size / (1024.0 * 1024.0)
-        # @@logger.info{"--- EVENT SIZE IN BYTES: #{event_size} bytes ---"}
-        # @@logger.info{"--- EVENT SIZE IN MB: #{event_size_mb} mb ---"}
-        # # if(event_size_mb > EVENT_SIZE_LIMIT) {
-        # #   @@logger.warn {"Invalid Record. Record size is larger than 2MB."}
-        # # }
-        
         time = event.get('@timestamp').time.to_f
         incoming_records += 1
         metricsLabels = MetricsLabels.new

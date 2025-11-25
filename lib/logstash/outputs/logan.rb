@@ -54,6 +54,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   concurrency :single
   default :codec, "line"
 
+  MAX_PAYLOAD_SIZE_BYTES = 2 * 1080 * 1080 # 2 MB
+
   @@logger = nil
   @@loganalytics_client = nil
   # @@prometheusMetrics = nil
@@ -111,14 +113,24 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # OCI Output plugin 4xx exception handling - Except '429'
   config :plugin_retry_on_4xx, :validate => :boolean, :default => false
 
+  # OCI Output plugin 5xx exception handling
+  config :plugin_retry_on_5xx, :validate => :boolean, :default => false
+
   
   # ---------------------------------------------------------------
   # Retry parameters
   # ---------------------------------------------------------------
-  # Seconds to wait before next retry to flush, or constant factor of exponential backoff
-  config :retry_wait, :validate => :number, :default => 2 # seconds
+  # Seconds to wait before next retry to flush on 4xx errors
+  config :retry_wait_on_4xx, :validate => :number, :default => 2 # seconds
   # The maximum number of times to retry to upload payload while failing
-  config :retry_max_times, :validate => :number, :default => 17
+  # if -1 is set, then plugin will retry unlimited times
+  config :retry_max_times_on_4xx, :validate => :number, :default => 17
+
+  # Seconds to wait before next retry to flush on 5xx errors
+  config :retry_wait_on_5xx, :validate => :number, :default => 2 # seconds
+  # The maximum number of times to retry to upload payload while failing
+  # if -1 is set, then plugin will retry unlimited times
+  config :retry_max_times_on_5xx, :validate => :number, :default => 17
 
   # The kubernetes_metadata_keys_mapping
   # config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {"container_name":"Container",
@@ -149,7 +161,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     # @mutex = Mutex.new
     # @log_grouper = LogGroup.new(@@logger)
     @oci_uploader = Uploader.new(@namespace, @dump_zip_file, @@loganalytics_client, @collection_source,
-                                 @zip_file_location, @plugin_retry_on_4xx, @retry_wait, @retry_max_times, @@logger)
+                                 @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,
+                                 @retry_wait_on_5xx, @retry_max_times_on_5xx, @@logger)
   end
 
   # Default function for the plugin
@@ -157,11 +170,49 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
     log_grouper = LogGroup.new(@@logger)
-    incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
-    tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
+
+    chunks = chunk_events(events_encoded)
+
+    chunks.each do |chunk|
+      incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
+      tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(chunk)
+      
+      @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
+      @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
+    end
+    # incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
+    # tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
     
-    @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
-    @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
+    # @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
+    # @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
+  end
+
+  def chunk_events(events_encoded)
+    chunks = []
+    current_chunk = []
+    current_size = 0
+
+    @@logger.info{"Starting chunking..."}
+    events_encoded.each do |event, encoded|
+      event_size = event.to_json.bytesize
+
+      # If adding this event would exceed the max size and we already have events in
+      # current chunk, start a new chunk
+      if current_size + event_size > MAX_PAYLOAD_SIZE_BYTES && !current_chunk.empty?
+        @@logger.info{"Chunk is full. Creating a new one."}
+        chunks << current_chunk
+        current_chunk = []
+        current_size = 0
+      end
+      # Append the event to the chunk
+      current_chunk << [event, encoded]
+      current_size += event_size
+      @@logger.info{"Chunk current size: #{current_size}"}
+    end
+
+    # append the last chunk
+    chunks << current_chunk unless current_chunk.empty?
+    return chunks
   end
 
   # logger

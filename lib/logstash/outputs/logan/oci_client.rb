@@ -96,6 +96,25 @@ class Client
       my_config = OCI::ConfigFileLoader.load_config(
         config_file_location: @config_file_location,
         profile_name: @profile_name)
+      no_retry = OCI::Retry::RetryConfig.new(
+        max_attempts: 1, # Total attempts including the initial call
+        # Other parameters are effectively ignored when max_attempts is 1, 
+        # but you still need to provide default or valid values if they are mandatory 
+        # in the specific Ruby SDK version's initializer signature:
+        base_sleep_time_millis: 1, 
+        exponential_growth_factor: 1, 
+        should_retry_exception_proc: proc { |exception| false }, # Always return false for any exception
+        sleep_calc_millis_proc: proc { |attempt_number, base_sleep_time_millis, max_sleep_between_attempts_millis| 0 }
+      )
+      example_retry_config = OCI::Retry::RetryConfig.new(
+        base_sleep_time_millis: 1,
+        exponential_growth_factor: 1,
+        should_retry_exception_proc: OCI::Retry::Functions::ShouldRetryOnError.retry_on_network_error_throttle_and_internal_server_errors, # rubocop:disable Metrics/LineLength
+        sleep_calc_millis_proc: OCI::Retry::Functions::Sleep.exponential_backoff_with_full_jitter,
+        max_attempts: 1,
+        # max_elapsed_time_millis: 300_000, # 5 minutes
+        # max_sleep_between_attempts_millis: 10_000
+      )
       la_endpoint = nil
       if is_valid(@endpoint)
         la_endpoint = @endpoint
@@ -104,7 +123,8 @@ class Client
         la_endpoint = "https://loganalytics.#{@oci_domain}"
         @@logger.info "Initializing loganalytics_client with custom domain endpoint: #{la_endpoint}"
       end
-      @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(config: my_config, endpoint: la_endpoint)
+      # @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(config: my_config, endpoint: la_endpoint)
+      @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(config: my_config, endpoint: la_endpoint, retry_config: example_retry_config)
       @@logger.info 'loganalytics_client initialized'
     else
       raise LogStash::ConfigurationError, "Invalid authType: #{@auth_type}, valid inputs are -  InstancePrincipal, ConfigFile, WorkloadIdentity"

@@ -23,7 +23,7 @@ class Uploader
   METRICS_SERVICE_ERROR_REASON_505 = "HTTP_VERSION_NOT_SUPPORTED"
   METRICS_SERVICE_ERROR_REASON_UNKNOWN = "UNKNOWN_ERROR"
 
-  def initialize(namespace, dump_zip_file, loganalytics_client, collection_source, zip_file_location, plugin_retry_on_4xx, retry_wait, retry_max_times, logger)
+  def initialize(namespace, dump_zip_file, loganalytics_client, collection_source, zip_file_location, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx, retry_wait_on_5xx, retry_max_times_on_5xx, logger)
     @namespace = namespace
     @@logger = logger
     @collection_source = collection_source
@@ -31,8 +31,11 @@ class Uploader
     @@loganalytics_client = loganalytics_client
     @zip_file_location = zip_file_location
     @plugin_retry_on_4xx = plugin_retry_on_4xx
-    @retry_wait = retry_wait
-    @retry_max_times = retry_max_times
+    @plugin_retry_on_5xx = plugin_retry_on_5xx
+    @retry_wait_on_4xx = retry_wait_on_4xx
+    @retry_max_times_on_4xx = retry_max_times_on_4xx
+    @retry_wait_on_5xx = retry_wait_on_5xx
+    @retry_max_times_on_5xx = retry_max_times_on_5xx
     @metricsLabels_array = []
     @logGroup_metrics_map = Hash.new
   end
@@ -41,16 +44,30 @@ class Uploader
   def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, metricsLabels_array)
     tries = 0
     begin
+      if tries > 0
+        @@logger.info {"Retrying..."}
+      end
       collection_src_prop = getCollectionSource(@collection_source)
       error_reason = nil
       error_code = nil
-      opts = { payload_type: "ZIP", opc_meta_properties:collection_src_prop}
+      opts = { payload_type: "ZIP", opc_meta_properties: collection_src_prop, retry_config:nil}
 
+      if tries > 0
+        @@logger.info {"Obtaining response..."}
+      end
       response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
                                       logGroupId=oci_la_log_group_id ,
                                       uploadLogEventsFileDetails=zippedstream,
                                       opts)
       
+      # @@logger.warn {" --- Retrying to upload the payload TEST --- "}
+      # sleep @retry_wait_on_5xx
+      # @@logger.info {"Wait time OVER - Uploading again"}
+      # response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
+      #                                 logGroupId=oci_la_log_group_id ,
+      #                                 uploadLogEventsFileDetails=zippedstream,
+      #                                 opts)
+      # @@logger.info {"DONE --- !!!"}
 
       if !response.nil?  && response.status == 200 then
         headers = response.headers
@@ -78,7 +95,7 @@ class Uploader
         when 400
           error_reason = METRICS_SERVICE_ERROR_REASON_400
           @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{serviceError.request_id}"}
-          if @plugin_retry_on_4xx
+          if @plugin_retry_on_4xx == false
             raise serviceError
           end
         when 401
@@ -86,7 +103,7 @@ class Uploader
           @@logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
                           opc-request-id:#{serviceError.request_id}
                           message: #{serviceError.message}"}
-          if @plugin_retry_on_4xx
+          if @plugin_retry_on_4xx == false
             raise serviceError
           end
         when 404
@@ -96,7 +113,7 @@ class Uploader
                           Namespace: #{@namespace}
                           opc-request-id: #{serviceError.request_id}
                           message: #{serviceError.message}"}
-          if @plugin_retry_on_4xx
+          if @plugin_retry_on_4xx == false
             raise serviceError
           end
         when 429
@@ -106,43 +123,97 @@ class Uploader
         when 500
           error_reason = METRICS_SERVICE_ERROR_REASON_500
           @@logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{serviceError.request_id}"}
-          raise serviceError
+          if @plugin_retry_on_5xx == false
+            raise serviceError
+          end
 
         when 502
           error_reason = METRICS_SERVICE_ERROR_REASON_502
           @@logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{serviceError.request_id}"}
-          raise serviceError
+          if @plugin_retry_on_5xx == false
+            raise serviceError
+          end
 
         when 503
           error_reason = METRICS_SERVICE_ERROR_REASON_503
           @@logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{serviceError.request_id}"}
-          raise serviceError
+          if @plugin_retry_on_5xx == false
+            raise serviceError
+          end
 
         when 504
           error_reason = METRICS_SERVICE_ERROR_REASON_504
           @@logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{serviceError.request_id}"}
-          raise serviceError
+          if @plugin_retry_on_5xx == false
+            raise serviceError
+          end
 
         when 505
           error_reason = METRICS_SERVICE_ERROR_REASON_505
           @@logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{serviceError.request_id}"}
-          raise serviceError
+          if @plugin_retry_on_5xx == false
+            raise serviceError
+          end
         else
           error_reason = METRICS_SERVICE_ERROR_REASON_UNKNOWN
           @@logger.error {"oci upload exception : Error while uploading the payload #{serviceError.message}"}
           raise serviceError
       end
-      # retry only on error codes 5XX
-      if error_code.between?(500,599)
-        if tries < @retry_max_times
+      # retry only on error codes 4XX
+      if error_code.between?(400,499) && error_code != 429 && @plugin_retry_on_4xx
+        if @retry_max_times_on_4xx == -1 || tries < @retry_max_times_on_4xx
           tries += 1
-          @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times} attempts"}
-          sleep @retry_wait
+          attempt_info = @retry_max_times_on_4xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_4xx} attempts"
+          @@logger.warn {"Retrying to upload the payload: #{attempt_info}"}
+          sleep @retry_wait_on_4xx
+          @@logger.info {"Wait time Over"}
           retry
+        # elsif tries < @retry_max_times_on_4xx
+        #   tries += 1
+        #   @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times_on_4xx} attempts"}
+        #   sleep @retry_wait_on_4xx
+        #   @@logger.info {"Wait time Over"}
+        #   retry
         else
-          @@logger.error {"Failed to upload the payload - : retried #{@retry_max_times} times"}
+          @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
         end
       end
+
+      # retry only on error codes 5XX
+      if error_code.between?(500,599) && @plugin_retry_on_5xx
+        if @retry_max_times_on_5xx == -1 || tries < @retry_max_times_on_5xx
+          tries += 1
+          attempt_info = @retry_max_times_on_5xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_5xx} attempts"
+          @@logger.warn {"Retrying to upload the payload: #{attempt_info}"}
+          sleep @retry_wait_on_5xx
+          @@logger.info {"Wait time Over"}
+          retry
+        else
+          @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
+        end
+      end
+
+
+      # if error_code.between?(500,599) && @plugin_retry_on_5xx
+      #   if tries < @retry_max_times_on_5xx
+      #     tries += 1
+      #     @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times_on_5xx} attempts"}
+      #     sleep @retry_wait_on_5xx
+      #     @@logger.info {"Wait time Over"}
+      #     retry
+      #   else
+      #     @@logger.error {"Failed to upload the payload - : retried #{@retry_max_times_on_5xx} times"}
+      #   end
+      # end
+
+      # @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times} attempts"}
+      # sleep @retry_wait
+      # @@logger.info {"Wait time OVER - Reuploading"}
+      # response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
+      #                                 logGroupId=oci_la_log_group_id ,
+      #                                 uploadLogEventsFileDetails=zippedstream,
+      #                                 opts)
+      # @@logger.info {"DONE UPLOADING"}
     rescue => ex
       error_reason = ex
       @@logger.error {"oci upload exception : Error while uploading the payload. #{ex}"}
@@ -157,14 +228,15 @@ class Uploader
       #                                                                                 error_code: error_code,
       #                                                                                 reason: error_reason})
       #         }
-      if tries < @retry_max_times
-        tries += 1
-        @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times} attempts"}
-        sleep @retry_wait
-        retry
-      else
-        @@logger.error {"Failed to upload the payload - : retried #{@retry_max_times} times"}
-      end
+      # if tries < @retry_max_times
+      #   tries += 1
+      #   @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times} attempts"}
+      #   sleep @retry_wait
+      #   @@logger.info {"Wait time OVER - for ANY"}
+      #   retry
+      # else
+      #   @@logger.error {"Failed to upload the payload - : retried #{@retry_max_times} times"}
+      # end
     end
   end
 
