@@ -57,7 +57,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   MAX_PAYLOAD_SIZE_BYTES = 2 * 1080 * 1080 # 2 MB
 
   @@logger = nil
-  @@loganalytics_client = nil
+  @loganalytics_client = nil
   # @@prometheusMetrics = nil
   @@logger_config_errors = []
   # @@worker_id = '0'
@@ -150,7 +150,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     # @@prometheusMetrics = PrometheusMetrics.instance
     
     @client.initialize_loganalytics_client()
-    @@loganalytics_client = @client.loganalytics_client
+    @loganalytics_client = @client.loganalytics_client
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
     if !is_mandatory_fields_valid
@@ -160,7 +160,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
     # @mutex = Mutex.new
     # @log_grouper = LogGroup.new(@@logger)
-    @oci_uploader = Uploader.new(@namespace, @dump_zip_file, @@loganalytics_client, @collection_source,
+    @oci_uploader = Uploader.new(@namespace, @dump_zip_file, @loganalytics_client, @collection_source,
                                  @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,
                                  @retry_wait_on_5xx, @retry_max_times_on_5xx, @@logger)
   end

@@ -55,6 +55,7 @@ class Uploader
       if tries > 0
         @@logger.info {"Obtaining response..."}
       end
+      
       response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
                                       logGroupId=oci_la_log_group_id ,
                                       uploadLogEventsFileDetails=zippedstream,
