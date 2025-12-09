@@ -190,28 +190,28 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
   end
 
-  def chunk_events(events_encoded)
-    chunks = []
-    current_chunk = []
-    current_size = 0
+  # def chunk_events(events_encoded)
+  #   chunks = []
+  #   current_chunk = []
+  #   current_size = 0
 
-    @@logger.info{"Starting chunking..."}
-    events_encoded.each do |event, encoded|
-      event_size = event.to_json.bytesize
+  #   @@logger.info{"Starting chunking..."}
+  #   events_encoded.each do |event, encoded|
+  #     event_size = event.to_json.bytesize
 
-      # If adding this event would exceed the max size and we already have events in
-      # current chunk, start a new chunk
-      if current_size + event_size > MAX_PAYLOAD_SIZE_BYTES && !current_chunk.empty?
-        @@logger.info{"Chunk is full. Creating a new one."}
-        chunks << current_chunk
-        current_chunk = []
-        current_size = 0
-      end
-      # Append the event to the chunk
-      current_chunk << [event, encoded]
-      current_size += event_size
-      @@logger.info{"Chunk current size: #{current_size}"}
-    end
+  #     # If adding this event would exceed the max size and we already have events in
+  #     # current chunk, start a new chunk
+  #     if current_size + event_size > MAX_PAYLOAD_SIZE_BYTES && !current_chunk.empty?
+  #       @@logger.info{"Chunk is full. Creating a new one."}
+  #       chunks << current_chunk
+  #       current_chunk = []
+  #       current_size = 0
+  #     end
+  #     # Append the event to the chunk
+  #     current_chunk << [event, encoded]
+  #     current_size += event_size
+  #     @@logger.info{"Chunk current size: #{current_size}"}
+  #   end
 
     # append the last chunk
     chunks << current_chunk unless current_chunk.empty?
