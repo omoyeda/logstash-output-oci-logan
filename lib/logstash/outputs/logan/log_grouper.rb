@@ -12,7 +12,7 @@ class LogGroup
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
 
-  BATCH_SIZE_LIMIT = 2 * 1024 * 1024 # 2 MB
+  MAX_PAYLOAD_SIZE_BYTES = 2 * 1024 * 1024 # 2 MB
   
   def initialize(logger)
     @@logger = logger
@@ -41,7 +41,11 @@ class LogGroup
       timezoneValuesByTag = Hash.new
       incoming_records = 0
       lrpes_for_logGroupId = {}
+
+      grouped = Hash.new { |h, k| h[k] = [] } # log_group_id => [chunks]
+      current_chunks = Hash.new { |h, k| h[k] = { size: 0, events: [] } }
       
+      @@logger.info{"Starting chunking...2"}
       events_encoded.each do |event, encoded|
         time = event.get('@timestamp').time.to_f
         incoming_records += 1
@@ -193,7 +197,27 @@ class LogGroup
             else
               event.set("oci_la_timezone", timezoneValuesByTag[event.get("tag")])
             end
-            events_buffer << event
+            # events_buffer << event
+            # ---- chunk ----
+            log_group_id = event.get("oci_la_log_group_id")
+            next if log_group_id.nil?
+
+            event_size = event.to_json.bytesize
+
+            # Start a new chunk if needed
+            if current_chunks[log_group_id][:size] + event_size > MAX_PAYLOAD_SIZE_BYTES
+              @@logger.debug{"Current chunk is full, starting a new one"}
+              # finalize current chunk
+              grouped[log_group_id] << current_chunks[log_group_id][:events]
+              # start a new chunk
+              current_chunks[log_group_id] = {size: 0, events: []}
+            end
+
+            @@logger.debug{"Current chunk size: #{current_chunks[log_group_id][:size]}"}
+
+            # Add event to current chunk
+            current_chunks[log_group_id][:events] << event
+            current_chunks[log_group_id][:size] += event_size
           ensure
             # To get chunk_time_to_receive metrics per tag, corresponding latency and total records are calculated
             if tag_metrics_set.has_key?(event.get("tag"))
@@ -225,16 +249,28 @@ class LogGroup
       #     latency_avg = (metricsLabels.latency / metricsLabels.records_per_tag).round(3)
       #     @@prometheusMetrics.chunk_time_to_receive.observe(latency_avg, labels: { worker_id: metricsLabels.worker_id, tag: tag})
       # end
-      events_buffer.group_by{|event|
-                  oci_la_log_group_id = event.get('oci_la_log_group_id')
-                  (oci_la_log_group_id)
-                  }.map {|oci_la_log_group_id, records_per_logGroupId|
-                    lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
-                  }
+
+      # events_buffer.group_by{|event|
+      #             oci_la_log_group_id = event.get('oci_la_log_group_id')
+      #             (oci_la_log_group_id)
+      #             }.map {|oci_la_log_group_id, records_per_logGroupId|
+      #               lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
+      #             }
+
+      # @@logger.debug {"lrpes_for_logGroupId class type: #{lrpes_for_logGroupId.class}"} # Hash
+      # @@logger.debug {"lrpes_for_logGroupId: #{lrpes_for_logGroupId}"} # <LogStash::Event:0xfe11faf>
+
+      # Push any remaining chunks
+      current_chunks.each do | log_group_id, chunk |
+        unless chunk[:events].empty?
+          grouped[log_group_id] << chunk[:events]
+        end
+      end
     rescue => ex
       @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
     end
-    return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId,lrpes_for_logGroupId
+    # return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId,lrpes_for_logGroupId
+    return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId, grouped
   end
 
   def get_or_parse_logSet(unparsed_logSet, event, record_hash, is_tag_exists)

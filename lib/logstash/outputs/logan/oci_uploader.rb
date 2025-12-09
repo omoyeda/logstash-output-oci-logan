@@ -82,11 +82,6 @@ class Uploader
                                       logGroupId=oci_la_log_group_id ,
                                       uploadLogEventsFileDetails=zippedstream,
                                       opts)
-
-      response.wait_until(
-        :lifecycle_state,
-        OCI::Core::Models::Volume::LIFECYCLE_STATE_AVAILABLE
-      )
       
       # @@logger.warn {" --- Retrying to upload the payload TEST --- "}
       # sleep @retry_wait_on_5xx
@@ -317,36 +312,38 @@ class Uploader
 
   def generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
     if lrpes_for_logGroupId != nil && lrpes_for_logGroupId.length > 0
-      lrpes_for_logGroupId.each do |oci_la_log_group_id, records_per_logGroupId|
-        begin
-          tags = tags_per_logGroupId.key(oci_la_log_group_id)
-          @@logger.info {"Generating payload with #{records_per_logGroupId.length}  records for oci_la_log_group_id: #{oci_la_log_group_id}"}
-          zippedstream = nil
-          oci_la_log_set = nil
-          logSets_per_logGroupId_map = Hash.new
+      lrpes_for_logGroupId.each do |oci_la_log_group_id, chunks|
+        chunks.each do |records_per_logGroupId|
+          begin
+            tags = tags_per_logGroupId.key(oci_la_log_group_id)
+            @@logger.info {"Generating payload with #{records_per_logGroupId.length}  records for oci_la_log_group_id: #{oci_la_log_group_id}"}
+            zippedstream = nil
+            oci_la_log_set = nil
+            logSets_per_logGroupId_map = Hash.new
 
-          @metricsLabels_array = @logGroup_metrics_map[oci_la_log_group_id]
+            @metricsLabels_array = @logGroup_metrics_map[oci_la_log_group_id]
 
-          # Only MAX_FILES_PER_ZIP (100) files are allowed, which will be grouped and zipped.
-          # Due to MAX_FILES_PER_ZIP constraint, for a oci_la_log_group_id, we can get more than one zip file and those many api calls will be made.
-          logSets_per_logGroupId_map, oci_la_global_metadata = get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
-            if logSets_per_logGroupId_map != nil
-              bytes_out = 0
-              records_out = 0
-              chunk_upload_time_taken = nil
-              chunk_upload_time_taken = Benchmark.measure {
-                logSets_per_logGroupId_map.each do |file_count,records_per_logSet_map|
-                    zippedstream,number_of_records = get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
-                    if zippedstream != nil
-                      zippedstream.rewind #reposition buffer pointer to the beginning
-                      upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, @metricsLabels_array)
-                    end
-                end
-              }.real.round(3)
-              # @@prometheusMetrics.chunk_time_to_upload.observe(chunk_upload_time_taken, labels: { worker_id: @@worker_id, oci_la_log_group_id: oci_la_log_group_id})
-            end
-        ensure
-          zippedstream&.close
+            # Only MAX_FILES_PER_ZIP (100) files are allowed, which will be grouped and zipped.
+            # Due to MAX_FILES_PER_ZIP constraint, for a oci_la_log_group_id, we can get more than one zip file and those many api calls will be made.
+            logSets_per_logGroupId_map, oci_la_global_metadata = get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
+              if logSets_per_logGroupId_map != nil
+                bytes_out = 0
+                records_out = 0
+                chunk_upload_time_taken = nil
+                chunk_upload_time_taken = Benchmark.measure {
+                  logSets_per_logGroupId_map.each do |file_count,records_per_logSet_map|
+                      zippedstream,number_of_records = get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
+                      if zippedstream != nil
+                        zippedstream.rewind #reposition buffer pointer to the beginning
+                        upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, @metricsLabels_array)
+                      end
+                  end
+                }.real.round(3)
+                # @@prometheusMetrics.chunk_time_to_upload.observe(chunk_upload_time_taken, labels: { worker_id: @@worker_id, oci_la_log_group_id: oci_la_log_group_id})
+              end
+          ensure
+            zippedstream&.close
+          end
         end
       end
     end

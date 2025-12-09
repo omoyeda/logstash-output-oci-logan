@@ -174,20 +174,20 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   def multi_receive_encoded(events_encoded)
     log_grouper = LogGroup.new(@@logger)
 
-    chunks = chunk_events(events_encoded)
+    # chunks = chunk_events(events_encoded)
 
-    chunks.each do |chunk|
-      incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
-      tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(chunk)
+    # chunks.each do |chunk|
+    #   incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
+    #   tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(chunk)
       
-      @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
-      @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
-    end
-    # incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
-    # tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
+    #   @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
+    #   @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
+    # end
+    incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
+    tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
     
-    # @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
-    # @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
+    @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
+    @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
   end
 
   def chunk_events(events_encoded)
