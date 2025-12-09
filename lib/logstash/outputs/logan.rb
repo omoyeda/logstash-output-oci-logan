@@ -1,5 +1,6 @@
 # encoding: utf-8
 require "logstash/outputs/base"
+require "logstash/namespace"
 
 # require 'zip'
 # require 'yajl'
@@ -7,7 +8,7 @@ require "logstash/outputs/base"
 require 'logger'
 
 require_relative 'logan/log_grouper'
-require_relative 'logan/oci_client'
+# require_relative 'logan/oci_client'
 require_relative 'logan/oci_uploader'
 
 # require_relative '../metrics/prometheusMetrics'
@@ -50,6 +51,8 @@ module OCI
 end
 
 class LogStash::Outputs::Logan < LogStash::Outputs::Base
+  require 'logstash/outputs/logan/oci_client'
+
   config_name "logan"
   concurrency :single
   default :codec, "line"
@@ -145,7 +148,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     end
   
     initialize_logger()
-    @client = Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
+    @client = LogStash::Outputs::LogAnalytics::Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
 
     # @@prometheusMetrics = PrometheusMetrics.instance
     

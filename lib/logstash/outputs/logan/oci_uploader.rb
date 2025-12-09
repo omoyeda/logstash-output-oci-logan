@@ -7,6 +7,8 @@ require_relative '../../dto/logEventsJson'
 require_relative '../../dto/logEvents'
 require "benchmark"
 require 'json'
+require 'oci'
+require 'logger'
 require 'oci/errors'
 
 class Uploader
@@ -38,19 +40,39 @@ class Uploader
     @retry_max_times_on_5xx = retry_max_times_on_5xx
     @metricsLabels_array = []
     @logGroup_metrics_map = Hash.new
+
+    OCI.logger = Logger.new(STDOUT)
+
+    retry_strategy_map = {
+      OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(404, 'NotAuthorizedOrNotFound') => true,
+      OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(409, 'IncorrectState') => true,
+      OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(429, 'TooManyRequests') => false,
+      OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(501, 'MethodNotImplemented') => false
+    }
+    @retry_config_5xx = OCI::Retry::RetryConfig.new(
+      base_sleep_time_millis: 1000 * @retry_wait_on_5xx,
+      exponential_growth_factor: 1,
+      should_retry_exception_proc:
+        OCI::Retry::Functions::ShouldRetryOnError.retry_strategy_with_customized_retry_mapping_proc(retry_strategy_map),
+      # sleep_calc_millis_proc: OCI::Retry::Functions::Sleep.exponential_backoff_with_full_jitter,
+      sleep_calc_millis_proc: Proc.new { |retry_config, retry_state| retry_config.base_sleep_time_millis },
+      max_attempts: @retry_max_times_on_5xx.nil? || @retry_max_times_on_5xx==-1 ? nil : @retry_max_times_on_5xx,
+      max_elapsed_time_millis: 300_000, # 5 minutes
+      max_sleep_between_attempts_millis: 1000 * @retry_wait_on_5xx,
+    )
   end
   
   # upload zipped stream to oci
   def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, metricsLabels_array)
     tries = 0
     begin
-      if tries > 0
-        @@logger.info {"Retrying..."}
-      end
+      # if tries > 0
+      #   @@logger.info {"Retrying..."}
+      # end
       collection_src_prop = getCollectionSource(@collection_source)
       error_reason = nil
       error_code = nil
-      opts = { payload_type: "ZIP", opc_meta_properties: collection_src_prop, retry_config:nil}
+      opts = { payload_type: "ZIP", opc_meta_properties: collection_src_prop, retry_config: @retry_config_5xx}
 
       if tries > 0
         @@logger.info {"Obtaining response..."}
@@ -60,6 +82,11 @@ class Uploader
                                       logGroupId=oci_la_log_group_id ,
                                       uploadLogEventsFileDetails=zippedstream,
                                       opts)
+
+      response.wait_until(
+        :lifecycle_state,
+        OCI::Core::Models::Volume::LIFECYCLE_STATE_AVAILABLE
+      )
       
       # @@logger.warn {" --- Retrying to upload the payload TEST --- "}
       # sleep @retry_wait_on_5xx
@@ -161,38 +188,32 @@ class Uploader
           raise serviceError
       end
       # retry only on error codes 4XX
-      if error_code.between?(400,499) && error_code != 429 && @plugin_retry_on_4xx
-        if @retry_max_times_on_4xx == -1 || tries < @retry_max_times_on_4xx
-          tries += 1
-          attempt_info = @retry_max_times_on_4xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_4xx} attempts"
-          @@logger.warn {"Retrying to upload the payload: #{attempt_info}"}
-          sleep @retry_wait_on_4xx
-          @@logger.info {"Wait time Over"}
-          retry
-        # elsif tries < @retry_max_times_on_4xx
-        #   tries += 1
-        #   @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times_on_4xx} attempts"}
-        #   sleep @retry_wait_on_4xx
-        #   @@logger.info {"Wait time Over"}
-        #   retry
-        else
-          @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
-        end
-      end
+      # if error_code.between?(400,499) && error_code != 429 && @plugin_retry_on_4xx
+      #   if @retry_max_times_on_4xx == -1 || tries < @retry_max_times_on_4xx
+      #     tries += 1
+      #     attempt_info = @retry_max_times_on_4xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_4xx} attempts"
+      #     @@logger.warn {"Retrying to upload the payload: #{attempt_info}"}
+      #     sleep @retry_wait_on_4xx
+      #     @@logger.info {"Wait time Over"}
+      #     retry
+      #   else
+      #     @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
+      #   end
+      # end
 
       # retry only on error codes 5XX
-      if error_code.between?(500,599) && @plugin_retry_on_5xx
-        if @retry_max_times_on_5xx == -1 || tries < @retry_max_times_on_5xx
-          tries += 1
-          attempt_info = @retry_max_times_on_5xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_5xx} attempts"
-          @@logger.warn {"Retrying to upload the payload: #{attempt_info}"}
-          sleep @retry_wait_on_5xx
-          @@logger.info {"Wait time Over"}
-          retry
-        else
-          @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
-        end
-      end
+      # if error_code.between?(500,599) && @plugin_retry_on_5xx
+      #   if @retry_max_times_on_5xx == -1 || tries < @retry_max_times_on_5xx
+      #     tries += 1
+      #     attempt_info = @retry_max_times_on_5xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_5xx} attempts"
+      #     @@logger.warn {"Retrying to upload the payload: #{attempt_info}"}
+      #     sleep @retry_wait_on_5xx
+      #     @@logger.info {"Wait time Over"}
+      #     retry
+      #   else
+      #     @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
+      #   end
+      # end
 
 
       # if error_code.between?(500,599) && @plugin_retry_on_5xx
