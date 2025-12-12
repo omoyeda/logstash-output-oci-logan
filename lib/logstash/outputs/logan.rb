@@ -52,6 +52,7 @@ end
 
 class LogStash::Outputs::Logan < LogStash::Outputs::Base
   require 'logstash/outputs/logan/oci_client'
+  # require 'logstash/outputs/logan/oci_uploader'
 
   config_name "logan"
   concurrency :single
@@ -214,9 +215,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   #   end
 
     # append the last chunk
-    chunks << current_chunk unless current_chunk.empty?
-    return chunks
-  end
+  #   chunks << current_chunk unless current_chunk.empty?
+  #   return chunks
+  # end
 
   # logger
   def initialize_logger()

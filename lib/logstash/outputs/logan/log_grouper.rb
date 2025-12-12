@@ -45,7 +45,7 @@ class LogGroup
       grouped = Hash.new { |h, k| h[k] = [] } # log_group_id => [chunks]
       current_chunks = Hash.new { |h, k| h[k] = { size: 0, events: [] } }
       
-      @@logger.info{"Starting chunking...2"}
+      # @@logger.info{"Starting chunking..."}
       events_encoded.each do |event, encoded|
         time = event.get('@timestamp').time.to_f
         incoming_records += 1
@@ -140,7 +140,7 @@ class LogGroup
 
             #This will check for null or empty messages and only that record will be ignored.
             if !is_valid(event.get("message"))
-                metricsLabels.invalid_reason = OutOracleOCILogAnalytics::METRICS_INVALID_REASON_MESSAGE
+                metricsLabels.invalid_reason = METRICS_INVALID_REASON_MESSAGE
                 if is_tag_exists
                   if invalid_records_per_tag.has_key?(event.get("tag"))
                     invalid_records_per_tag[event.get("tag")] += 1
