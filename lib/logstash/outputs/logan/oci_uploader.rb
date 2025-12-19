@@ -6,16 +6,17 @@ require_relative '../../enums/source'
 require_relative '../../dto/logEventsJson'
 require_relative '../../dto/logEvents'
 
+require 'zip'
+require "benchmark"
+require 'json'
+require 'oci'
+require 'logger'
+require 'oci/errors'
+
 # module LogStash
 #   module Outputs
 #     module LogAnalytics
       class Uploader
-        require "benchmark"
-        require 'json'
-        require 'oci'
-        require 'logger'
-        require 'oci/errors'
-
         MAX_FILES_PER_ZIP = 100
         METRICS_SERVICE_ERROR_REASON_400 = "INVALID_PARAMETER"
         METRICS_SERVICE_ERROR_REASON_401 = "AUTHENTICATION_FAILED"
