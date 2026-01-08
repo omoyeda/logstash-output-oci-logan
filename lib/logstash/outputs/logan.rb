@@ -9,7 +9,7 @@ require 'logger'
 
 require_relative 'logan/log_grouper'
 # require_relative 'logan/oci_client'
-require_relative 'logan/oci_uploader'
+# require_relative 'logan/oci_uploader'
 
 # require_relative '../metrics/prometheusMetrics'
 require_relative '../enums/source'
@@ -52,7 +52,10 @@ end
 
 class LogStash::Outputs::Logan < LogStash::Outputs::Base
   require 'logstash/outputs/logan/oci_client'
-  # require 'logstash/outputs/logan/oci_uploader'
+  require 'logstash/outputs/logan/oci_uploader'
+
+  attr_reader :oci_uploader
+  attr_reader :oci_client
 
   config_name "logan"
   concurrency :single
@@ -144,6 +147,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # Default function for the plugin - same as initilize method, meant to enforce having super called
   public
   def register
+    # OCI logger for debug
+    # OCI.logger = Logger.new(STDOUT)
+
     if is_valid(@oci_domain) && !@oci_domain.match(/\S.oci.\S/)
       raise LogStash::ConfigurationError, "Invalid oci_domain: #{@oci_domain}, valid fmt: <oci-region>.oci.<oci-domain> | ex: us-ashburn-1.oci.oraclecloud.com"
     end
@@ -164,7 +170,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
     # @mutex = Mutex.new
     # @log_grouper = LogGroup.new(@@logger)
-    @oci_uploader = Uploader.new(@namespace, @dump_zip_file, @loganalytics_client, @collection_source,
+    @oci_uploader = LogStash::Outputs::LogAnalytics::Uploader.new(@namespace, @dump_zip_file, @loganalytics_client, @collection_source,
                                  @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,
                                  @retry_wait_on_5xx, @retry_max_times_on_5xx, @@logger)
   end

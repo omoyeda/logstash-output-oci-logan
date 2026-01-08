@@ -13,10 +13,12 @@ require 'oci'
 require 'logger'
 require 'oci/errors'
 
-# module LogStash
-#   module Outputs
-#     module LogAnalytics
+module LogStash
+  module Outputs
+    module LogAnalytics
       class Uploader
+        attr_reader :response_status
+        
         MAX_FILES_PER_ZIP = 100
         METRICS_SERVICE_ERROR_REASON_400 = "INVALID_PARAMETER"
         METRICS_SERVICE_ERROR_REASON_401 = "AUTHENTICATION_FAILED"
@@ -44,8 +46,6 @@ require 'oci/errors'
           @retry_max_times_on_5xx = retry_max_times_on_5xx
           @metricsLabels_array = []
           @logGroup_metrics_map = Hash.new
-
-          OCI.logger = Logger.new(STDOUT)
 
           retry_strategy_map = {
             OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(404, 'NotAuthorizedOrNotFound') => true,
@@ -84,8 +84,10 @@ require 'oci/errors'
             
             response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
                                             logGroupId=oci_la_log_group_id ,
-                                            uploadLogEventsFileDetails=zippedstream,
+                                            uploadLogEventsFileDetails=zippedstream.string,
                                             opts)
+
+            @response_status = response.status
             
             # @@logger.warn {" --- Retrying to upload the payload TEST --- "}
             # sleep @retry_wait_on_5xx
@@ -186,6 +188,7 @@ require 'oci/errors'
                 @@logger.error {"oci upload exception : Error while uploading the payload #{serviceError.message}"}
                 raise serviceError
             end
+            @response_status = error_code
             # retry only on error codes 4XX
             # if error_code.between?(400,499) && error_code != 429 && @plugin_retry_on_4xx
             #   if @retry_max_times_on_4xx == -1 || tries < @retry_max_times_on_4xx
@@ -444,7 +447,7 @@ require 'oci/errors'
           begin
             fileName = oci_la_log_group_id+"_"+current_s+'.zip'
             fileLocation = @zip_file_location+fileName
-            file = File.open(fileLocation, "w")
+            file = ::File.open(fileLocation, "w")
             file.write(zippedstream.sysread)
             rescue => ex
                           @@logger.error {"Error occurred while saving zip file.
@@ -481,6 +484,6 @@ require 'oci/errors'
           end
         end
       end
-#     end
-#   end
-# end
+    end
+  end
+end
