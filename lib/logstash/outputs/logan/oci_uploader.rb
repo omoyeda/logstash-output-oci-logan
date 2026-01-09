@@ -17,6 +17,7 @@ module LogStash
   module Outputs
     module LogAnalytics
       class Uploader
+        # class variable for unit tests
         attr_reader :response_status
         
         MAX_FILES_PER_ZIP = 100
@@ -47,40 +48,32 @@ module LogStash
           @metricsLabels_array = []
           @logGroup_metrics_map = Hash.new
 
-          retry_strategy_map = {
-            OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(404, 'NotAuthorizedOrNotFound') => true,
-            OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(409, 'IncorrectState') => true,
-            OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(429, 'TooManyRequests') => false,
-            OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(501, 'MethodNotImplemented') => false
-          }
-          @retry_config_5xx = OCI::Retry::RetryConfig.new(
-            base_sleep_time_millis: 1000 * @retry_wait_on_5xx,
-            exponential_growth_factor: 1,
-            should_retry_exception_proc:
-              OCI::Retry::Functions::ShouldRetryOnError.retry_strategy_with_customized_retry_mapping_proc(retry_strategy_map),
-            # sleep_calc_millis_proc: OCI::Retry::Functions::Sleep.exponential_backoff_with_full_jitter,
-            sleep_calc_millis_proc: Proc.new { |retry_config, retry_state| retry_config.base_sleep_time_millis },
-            max_attempts: @retry_max_times_on_5xx.nil? || @retry_max_times_on_5xx==-1 ? nil : @retry_max_times_on_5xx,
-            max_elapsed_time_millis: 300_000, # 5 minutes
-            max_sleep_between_attempts_millis: 10000,
-          )
+          # retry_strategy_map = {
+          #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(404, 'NotAuthorizedOrNotFound') => true,
+          #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(409, 'IncorrectState') => true,
+          #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(429, 'TooManyRequests') => false,
+          #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(501, 'MethodNotImplemented') => false
+          # }
+          # @retry_config_5xx = OCI::Retry::RetryConfig.new(
+          #   base_sleep_time_millis: 1000 * @retry_wait_on_5xx,
+          #   exponential_growth_factor: 1,
+          #   should_retry_exception_proc:
+          #     OCI::Retry::Functions::ShouldRetryOnError.retry_strategy_with_customized_retry_mapping_proc(retry_strategy_map),
+          #   sleep_calc_millis_proc: Proc.new { |retry_config, retry_state| retry_config.base_sleep_time_millis },
+          #   max_attempts: @retry_max_times_on_5xx.nil? || @retry_max_times_on_5xx==-1 ? nil : @retry_max_times_on_5xx,
+          #   max_elapsed_time_millis: 300_000, # 5 minutes
+          #   max_sleep_between_attempts_millis: 10000,
+          # )
         end
         
         # upload zipped stream to oci
         def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, metricsLabels_array)
           tries = 0
           begin
-            # if tries > 0
-            #   @@logger.info {"Retrying..."}
-            # end
             collection_src_prop = getCollectionSource(@collection_source)
             error_reason = nil
             error_code = nil
             opts = { payload_type: "ZIP", opc_meta_properties: collection_src_prop, retry_config: @retry_config_5xx}
-
-            if tries > 0
-              @@logger.info {"Obtaining response..."}
-            end
             
             response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
                                             logGroupId=oci_la_log_group_id ,
@@ -88,15 +81,6 @@ module LogStash
                                             opts)
 
             @response_status = response.status
-            
-            # @@logger.warn {" --- Retrying to upload the payload TEST --- "}
-            # sleep @retry_wait_on_5xx
-            # @@logger.info {"Wait time OVER - Uploading again"}
-            # response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
-            #                                 logGroupId=oci_la_log_group_id ,
-            #                                 uploadLogEventsFileDetails=zippedstream,
-            #                                 opts)
-            # @@logger.info {"DONE --- !!!"}
 
             if !response.nil?  && response.status == 200 then
               headers = response.headers
@@ -189,33 +173,34 @@ module LogStash
                 raise serviceError
             end
             @response_status = error_code
+
             # retry only on error codes 4XX
-            # if error_code.between?(400,499) && error_code != 429 && @plugin_retry_on_4xx
-            #   if @retry_max_times_on_4xx == -1 || tries < @retry_max_times_on_4xx
-            #     tries += 1
-            #     attempt_info = @retry_max_times_on_4xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_4xx} attempts"
-            #     @@logger.warn {"Retrying to upload the payload: #{attempt_info}"}
-            #     sleep @retry_wait_on_4xx
-            #     @@logger.info {"Wait time Over"}
-            #     retry
-            #   else
-            #     @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
-            #   end
-            # end
+            if error_code.between?(400,499) && error_code != 429 && @plugin_retry_on_4xx
+              if @retry_max_times_on_4xx == -1 || tries < @retry_max_times_on_4xx
+                tries += 1
+                attempt_info = @retry_max_times_on_4xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_4xx} attempts"
+                @@logger.warn {"Retrying to upload the payload: #{attempt_info}. Waiting..."}
+                sleep @retry_wait_on_4xx
+                @@logger.info {"Wait time Over. Retrying..."}
+                retry
+              else
+                @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
+              end
+            end
 
             # retry only on error codes 5XX
-            # if error_code.between?(500,599) && @plugin_retry_on_5xx
-            #   if @retry_max_times_on_5xx == -1 || tries < @retry_max_times_on_5xx
-            #     tries += 1
-            #     attempt_info = @retry_max_times_on_5xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_5xx} attempts"
-            #     @@logger.warn {"Retrying to upload the payload: #{attempt_info}"}
-            #     sleep @retry_wait_on_5xx
-            #     @@logger.info {"Wait time Over"}
-            #     retry
-            #   else
-            #     @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
-            #   end
-            # end
+            if error_code.between?(500,599) && @plugin_retry_on_5xx
+              if @retry_max_times_on_5xx == -1 || tries < @retry_max_times_on_5xx
+                tries += 1
+                attempt_info = @retry_max_times_on_5xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_5xx} attempts"
+                @@logger.warn {"Retrying to upload the payload: #{attempt_info}. Waiting..."}
+                sleep @retry_wait_on_5xx
+                @@logger.info {"Wait time Over. Retrying..."}
+                retry
+              else
+                @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
+              end
+            end
 
 
             # if error_code.between?(500,599) && @plugin_retry_on_5xx
@@ -369,15 +354,12 @@ module LogStash
 
             records_per_logGroupId.group_by { |event|
               if !is_oci_la_global_metadata_assigned
-                # record_hash = record.keys.map {|x| [x,true]}.to_h
                 record_hash = event.to_hash
                 if record_hash.has_key?("oci_la_global_metadata")
-                  # oci_la_global_metadata = record['oci_la_global_metadata']
                   oci_la_global_metadata = event.get('oci_la_global_metadata')
                 end
                 is_oci_la_global_metadata_assigned = true
               end
-              # oci_la_log_set = record['oci_la_log_set']
               oci_la_log_set = event.get('oci_la_log_set')
               (oci_la_log_set)
             }.map { |oci_la_log_set, records_per_logSet|
@@ -426,7 +408,6 @@ module LogStash
                     @@logger.debug {"Added entry #{nextEntry} for oci_la_log_set #{oci_la_log_set} into the zip."}
                     zos.put_next_entry(nextEntry)
                     logEventsJsonFinal = LogEventsJson.new(oci_la_global_metadata,lrpes_for_logEvents)
-                    # zos.write Yajl.dump(logEventsJsonFinal.to_hash)
                     zos.write JSON.dump(logEventsJsonFinal.to_hash)
               end
             }

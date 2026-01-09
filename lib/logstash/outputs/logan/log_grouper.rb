@@ -250,16 +250,6 @@ class LogGroup
       #     @@prometheusMetrics.chunk_time_to_receive.observe(latency_avg, labels: { worker_id: metricsLabels.worker_id, tag: tag})
       # end
 
-      # events_buffer.group_by{|event|
-      #             oci_la_log_group_id = event.get('oci_la_log_group_id')
-      #             (oci_la_log_group_id)
-      #             }.map {|oci_la_log_group_id, records_per_logGroupId|
-      #               lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
-      #             }
-
-      # @@logger.debug {"lrpes_for_logGroupId class type: #{lrpes_for_logGroupId.class}"} # Hash
-      # @@logger.debug {"lrpes_for_logGroupId: #{lrpes_for_logGroupId}"} # <LogStash::Event:0xfe11faf>
-
       # Push any remaining chunks
       current_chunks.each do | log_group_id, chunk |
         unless chunk[:events].empty?
@@ -269,7 +259,6 @@ class LogGroup
     rescue => ex
       @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
     end
-    # return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId,lrpes_for_logGroupId
     return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId, grouped
   end
 

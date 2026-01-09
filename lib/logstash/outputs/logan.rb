@@ -1,42 +1,10 @@
 # encoding: utf-8
 require "logstash/outputs/base"
 require "logstash/namespace"
-
-# require 'zip'
-# require 'yajl'
-# require 'yajl/json_gem'
 require 'logger'
 
 require_relative 'logan/log_grouper'
-# require_relative 'logan/oci_client'
-# require_relative 'logan/oci_uploader'
-
-# require_relative '../metrics/prometheusMetrics'
 require_relative '../enums/source'
-
-# Import only specific OCI modules to improve load times and reduce the memory requirements.
-# require 'oci/auth/auth'
-# require 'oci/log_analytics/log_analytics'
-# require 'oci/log_analytics/log_analytics_client'
-
-# Workaround until OCI SDK releases a proper fix to load only specific service related modules/client.
-# require 'oci/api_client'
-# require 'oci/api_client_proxy_settings'
-# require 'oci/config'
-# require 'oci/config_file_loader'
-# require 'oci/errors'
-# require 'oci/global_context'
-# require 'oci/internal/internal'
-# require 'oci/regions'
-# require 'oci/regions_definitions'
-# require 'oci/response_headers'
-# require 'oci/response'
-# require 'oci/base_signer'
-# require 'oci/signer'
-# require 'oci/version'
-# require 'oci/waiter'
-# require 'oci/retry/retry'
-# require 'oci/object_storage/object_storage'
 
 module OCI
   class << self
@@ -67,7 +35,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   @loganalytics_client = nil
   # @@prometheusMetrics = nil
   @@logger_config_errors = []
-  # @@worker_id = '0'
   @@encoded_messages_count = 0
 
   # ---------------------------------------------------------------
@@ -147,9 +114,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # Default function for the plugin - same as initilize method, meant to enforce having super called
   public
   def register
-    # OCI logger for debug
-    # OCI.logger = Logger.new(STDOUT)
-
     if is_valid(@oci_domain) && !@oci_domain.match(/\S.oci.\S/)
       raise LogStash::ConfigurationError, "Invalid oci_domain: #{@oci_domain}, valid fmt: <oci-region>.oci.<oci-domain> | ex: us-ashburn-1.oci.oraclecloud.com"
     end
@@ -169,7 +133,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     end
 
     # @mutex = Mutex.new
-    # @log_grouper = LogGroup.new(@@logger)
     @oci_uploader = LogStash::Outputs::LogAnalytics::Uploader.new(@namespace, @dump_zip_file, @loganalytics_client, @collection_source,
                                  @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,
                                  @retry_wait_on_5xx, @retry_max_times_on_5xx, @@logger)
@@ -180,50 +143,12 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
     log_grouper = LogGroup.new(@@logger)
-
-    # chunks = chunk_events(events_encoded)
-
-    # chunks.each do |chunk|
-    #   incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
-    #   tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(chunk)
-      
-    #   @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
-    #   @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
-    # end
     incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
     tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
     
     @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
     @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
   end
-
-  # def chunk_events(events_encoded)
-  #   chunks = []
-  #   current_chunk = []
-  #   current_size = 0
-
-  #   @@logger.info{"Starting chunking..."}
-  #   events_encoded.each do |event, encoded|
-  #     event_size = event.to_json.bytesize
-
-  #     # If adding this event would exceed the max size and we already have events in
-  #     # current chunk, start a new chunk
-  #     if current_size + event_size > MAX_PAYLOAD_SIZE_BYTES && !current_chunk.empty?
-  #       @@logger.info{"Chunk is full. Creating a new one."}
-  #       chunks << current_chunk
-  #       current_chunk = []
-  #       current_size = 0
-  #     end
-  #     # Append the event to the chunk
-  #     current_chunk << [event, encoded]
-  #     current_size += event_size
-  #     @@logger.info{"Chunk current size: #{current_size}"}
-  #   end
-
-    # append the last chunk
-  #   chunks << current_chunk unless current_chunk.empty?
-  #   return chunks
-  # end
 
   # logger
   def initialize_logger()
