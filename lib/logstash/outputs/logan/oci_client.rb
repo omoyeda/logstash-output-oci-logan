@@ -111,7 +111,6 @@ module LogStash
               @@logger.info "Initializing loganalytics_client with custom domain endpoint: #{la_endpoint}"
             end
             @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(config: my_config, endpoint: la_endpoint)
-            # @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(region: OCI::Regions::REGION_US_PHOENIX_1)
             @@logger.info 'loganalytics_client initialized'
           else
             raise LogStash::ConfigurationError, "Invalid authType: #{@auth_type}, valid inputs are -  InstancePrincipal, ConfigFile, WorkloadIdentity"

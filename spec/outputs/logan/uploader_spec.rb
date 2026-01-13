@@ -18,6 +18,22 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
 
   let(:log_output) { StringIO.new }
   let(:logger) { Logger.new(log_output) }
+  let(:event) { event = LogStash::Event.new({
+        "message" => "Uploader test log",
+        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+        "oci_la_log_set" => "log_set_unit_test_logs"
+      }) }
+
+  let(:event_with_metadata) { event = LogStash::Event.new({
+        "message" => "Uploader test log",
+        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+        "oci_la_log_set" => "log_set_unit_test_logs",
+        "oci_la_global_metadata" => {"Access Control List" => "test:test"}
+      }) }
 
   subject { described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
         zip_file_location, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx,
@@ -28,12 +44,6 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
       uploader = described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
         zip_file_location, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx, retry_wait_on_5xx, retry_max_times_on_5xx, logger)
 
-      event = LogStash::Event.new({
-        "message" => "Uploader test log",
-        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-        "oci_la_log_source_name" => "Linux Syslog Logs",
-        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
-      })
       tags_per_logGroupId = { ENV["OCI_TEST_LOG_GROUP_ID"] => "" }
       lrpes_for_logGroupId = { ENV["OCI_TEST_LOG_GROUP_ID"] => [[event]] }
       expect { uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId) }.not_to raise_error
@@ -42,13 +52,6 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
 
   context "testing function return formats" do
     it "get_logSets_map_per_logGroupId returns Hash" do
-      event = LogStash::Event.new({
-        "message" => "Uploader test log",
-        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-        "oci_la_log_source_name" => "Linux Syslog Logs",
-        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
-        "oci_la_log_set" => nil
-      })
       oci_la_log_group_id = ENV["OCI_TEST_LOG_GROUP_ID"]
       records_per_logGroupId = [event]
       
@@ -57,42 +60,37 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
       expect(oci_la_global_metadata).to be_nil
     end
 
-    # it "get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map) returns zip" do
-    #   event = LogStash::Event.new({
-    #     "message" => "Uploader test log",
-    #     "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-    #     "oci_la_log_source_name" => "Linux Syslog Logs",
-    #     "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
-    #     "oci_la_log_set" => nil
-    #   })
-    #   oci_la_log_group_id = ENV["OCI_TEST_LOG_GROUP_ID"]
-    #   records_per_logGroupId = [event]
-
-    #   logSets_per_logGroupId_map,oci_la_global_metadata = subject.get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
-    #   records_per_logSet_map = logSets_per_logGroupId_map[ENV["OCI_TEST_LOG_GROUP_ID"]]
-    #   zippedstream,number_of_records = subject.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
-    #   expect(zippedstream).to be_a(StringIO)
-    #   expect(number_of_records).to eq(1)
-    # end
-
-    # it "saves to local" do
-    #   event = LogStash::Event.new({
-    #     "message" => "Uploader test log",
-    #     "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-    #     "oci_la_log_source_name" => "Linux Syslog Logs",
-    #     "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
-    #     "oci_la_log_set" => nil
-    #   })
-    #   oci_la_log_group_id = ENV["OCI_TEST_LOG_GROUP_ID"]
-    #   records_per_logGroupId = [event]
-
-    #   logSets_per_logGroupId_map,oci_la_global_metadata = subject.get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
-    #   records_per_logSet_map = logSets_per_logGroupId_map[ENV["OCI_TEST_LOG_GROUP_ID"]]
-    #   zippedstream,number_of_records = subject.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
+    it "returns metadata Hash" do
+      oci_la_log_group_id = ENV["OCI_TEST_LOG_GROUP_ID"]
+      records_per_logGroupId = [event_with_metadata]
       
-    #   current_s = Time.now().strftime("%Y%m%dT%H%M%S%9NZ")
-    #   subject.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
-    #   expect(File.exist?('/tmp/record.json')).to be true
-    # end
+      logSets_per_logGroupId_map,oci_la_global_metadata = subject.get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
+      expect(oci_la_global_metadata['Access Control List']).to eq("test:test")
+    end
+
+    it "get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map) returns zip" do
+      oci_la_log_group_id = ENV["OCI_TEST_LOG_GROUP_ID"]
+      records_per_logGroupId = [event]
+
+      logSets_per_logGroupId_map,oci_la_global_metadata = subject.get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
+      records_per_logSet_map = logSets_per_logGroupId_map[1]
+      zippedstream,number_of_records = subject.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
+      expect(zippedstream).to be_a(StringIO)
+      expect(number_of_records).to eq(1)
+    end
+
+    it "saves to local" do
+      oci_la_log_group_id = ENV["OCI_TEST_LOG_GROUP_ID"]
+      records_per_logGroupId = [event]
+
+      logSets_per_logGroupId_map,oci_la_global_metadata = subject.get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
+      records_per_logSet_map = logSets_per_logGroupId_map[1]
+      zippedstream,number_of_records = subject.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
+      
+      current_s = Time.now().strftime("%Y%m%dT%H%M%S%9NZ")
+      subject.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
+      file_name = oci_la_log_group_id+ "_#{current_s}.zip"
+      expect(File.exist?("/tmp/#{file_name}")).to be true
+    end
   end
 end

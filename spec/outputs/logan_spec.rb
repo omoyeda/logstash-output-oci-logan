@@ -24,7 +24,8 @@ describe LogStash::Outputs::Logan do
     "message" => "Test Log",
     "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
     "oci_la_log_source_name" => "Linux Syslog Logs",
-    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
+    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+    "oci_la_metadata" => {"Access Control List" => "test:test"}
   }) }
   let(:event_encoded) { "foo" }
   let(:events_and_encoded) { { event => event_encoded } }
@@ -71,6 +72,10 @@ describe LogStash::Outputs::Logan do
 
   subject { described_class.new(config) }
 
+  it 'should register without errors' do
+    expect { subject.register }.to_not raise_error
+  end
+
   context "receiving events" do
     before do
       subject.register
@@ -79,10 +84,6 @@ describe LogStash::Outputs::Logan do
     after do
       subject.close
     end
-
-    # it 'should register without errors' do
-    #   expect { subject.register }.to_not raise_error
-    # end
 
     it "receives and uploads event" do
       expect { subject.multi_receive_encoded(events_and_encoded) }.to_not raise_error
