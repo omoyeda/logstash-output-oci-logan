@@ -3,7 +3,7 @@ require "logstash/outputs/base"
 require "logstash/namespace"
 require 'logger'
 
-require_relative 'logan/log_grouper'
+# require_relative 'logan/log_grouper'
 require_relative '../enums/source'
 
 module OCI
@@ -21,6 +21,7 @@ end
 class LogStash::Outputs::Logan < LogStash::Outputs::Base
   require 'logstash/outputs/logan/oci_client'
   require 'logstash/outputs/logan/oci_uploader'
+  require 'logstash/outputs/logan/log_grouper'
 
   attr_reader :oci_uploader
   attr_reader :oci_client
@@ -142,7 +143,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # This function is resposible for getting the events from Logstash
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
-    log_grouper = LogGroup.new(@@logger)
+    log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@@logger)
     incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
     tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
     

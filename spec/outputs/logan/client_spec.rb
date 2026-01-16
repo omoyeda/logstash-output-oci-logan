@@ -3,6 +3,7 @@ require 'logstash/outputs/logan/oci_client'
 require 'logger'
 
 describe LogStash::Outputs::LogAnalytics::Client do
+  # client with config file
   config_file_location = ENV["OCI_CONFIG_PATH"] || nil
   profile_name = ENV["OCI_PROFILE_NAME"] || nil
   endpoint = nil
@@ -15,11 +16,24 @@ describe LogStash::Outputs::LogAnalytics::Client do
   logger = Logger.new(STDOUT)
 
   describe "Initialize Log Analytics client" do
-    it "does not fail while initializing Log Analytics Client" do
+    it "does not fail while initializing Log Analytics Client with ConfigFile" do
       client = described_class.new(config_file_location, profile_name, endpoint, auth_type,
         oci_domain, proxy_ip, proxy_port, proxy_username, proxy_password, logger)
       expect { client.initialize_loganalytics_client() }.not_to raise_error
       expect(client.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
     end
+  
+    # it "does not fail while initializing with auth type InstancePrincipal" do
+    #   client2 = described_class.new(nil, nil, nil, "InstancePrincipal",
+    #     nil, nil, nil, nil, nil, logger)
+    #   expect { client2.initialize_loganalytics_client() }.not_to raise_error
+    #   expect(client2.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
+    # end
   end
+
+  # describe "Fail to initialize Log Analytics Client" do
+  #   it "should not initialize with missing parameters" do
+
+  #   end
+  # end
 end

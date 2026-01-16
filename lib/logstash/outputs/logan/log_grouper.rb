@@ -7,6 +7,7 @@ require 'json'
 
 require 'thread'
 
+module LogStash::Outputs::LogAnalytics
 class LogGroup
   METRICS_INVALID_REASON_MESSAGE = "MISSING_FIELD_MESSAGE"
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
@@ -45,7 +46,6 @@ class LogGroup
       grouped = Hash.new { |h, k| h[k] = [] } # log_group_id => [chunks]
       current_chunks = Hash.new { |h, k| h[k] = { size: 0, events: [] } }
       
-      # @@logger.info{"Starting chunking..."}
       events_encoded.each do |event, encoded|
         time = event.get('@timestamp').time.to_f
         incoming_records += 1
@@ -146,7 +146,7 @@ class LogGroup
                     invalid_records_per_tag[event.get("tag")] += 1
                   else
                     invalid_records_per_tag[event.get("tag")] = 1
-                    @@logger.warn {"'message' field is empty or encoded, Skipping records associated with tag : #{revent.get("tag")}."}
+                    @@logger.warn {"'message' field is empty or encoded, Skipping records associated with tag : #{event.get("tag")}."}
                   end
                 else
                   @@logger.warn {"'message' field is empty or encoded, Skipping record."}
@@ -432,4 +432,5 @@ class LogGroup
       return true
     end
   end
+end
 end
