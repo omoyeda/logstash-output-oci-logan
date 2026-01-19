@@ -203,9 +203,6 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
 
     it "returns multiple grouped events, with different tags same group id" do
       output = subject.group_by_logGroupId(mult_and_encoded2)
-      # puts "tags---: #{output.values_at(4)}"
-      # puts "Is equal? ---: #{expect_output7[2]}"
-      # puts "Is equal? ---: #{expect_output7[2] == output.values_at(4)}"
       expect(output.values_at(0,1,4,5)).to eq(expect_output7)
     end
     it "returns multiple grouped events and some invalid ones" do

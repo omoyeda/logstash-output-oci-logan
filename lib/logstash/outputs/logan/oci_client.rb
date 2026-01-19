@@ -81,22 +81,8 @@ module LogStash
             @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(
               config: OCI::Config.new,
               endpoint: la_endpoint,
-              signer: instance_principals_signer)
-            @@logger.info 'loganalytics_client initialized.'
-          when "WorkloadIdentity"
-            la_endpoint = nil
-            workload_identity_signer = OCI::Auth::Signers::oke_workload_resource_principal_signer
-            if is_valid(@endpoint)
-              la_endpoint = @endpoint
-              @@logger.info "Initializing loganalytics_client with endpoint: #{@endpoint}"
-            elsif is_valid(@oci_domain)
-              la_endpoint = "https://loganalytics.#{@oci_domain}"
-              @@logger.info "Initializing loganalytics_client with custom domain endpoint: #{la_endpoint}"
-            end
-            @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(
-              config: OCI::Config.new,
-              endpoint: la_endpoint,
-              signer: workload_identity_signer)
+              signer: instance_principals_signer
+            )
             @@logger.info 'loganalytics_client initialized.'
           when "ConfigFile"
             my_config = OCI::ConfigFileLoader.load_config(
