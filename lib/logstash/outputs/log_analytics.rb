@@ -26,7 +26,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   attr_reader :oci_uploader
   attr_reader :oci_client
 
-  config_name "logan"
+  config_name "log_analytics"
   concurrency :single
   default :codec, "line"
 

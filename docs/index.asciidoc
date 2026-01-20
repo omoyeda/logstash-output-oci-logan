@@ -1,6 +1,6 @@
-:plugin: example
+:plugin: logan
 :type: output
-:default_codec: plain
+:default_codec: line
 // Update header with plugin name and default codec
 
 ///////////////////////////////////////////
@@ -16,20 +16,21 @@ END - GENERATED VARIABLES, DO NOT EDIT!
 
 [id="plugins-{type}s-{plugin}"]
 
-=== Example output plugin
+=== Log Analytics output plugin
 
 include::{include_path}/plugin_header.asciidoc[]
 
 ==== Description
 
-Add plugin description here
+A plugin for Oracle Cloud Infrastructure (OCI) Log Analytics service.
+This plugin groups incoming log events from Logstash by their log group ID and uploads it as a payload to OCI Log Analytics.
 
 // Format anchors and links to support generated ids for versioning
 // Sample anchor: [id="plugins-{type}s-{plugin}-setting_name"]
 // Sample link: <<plugins-{type}s-{plugin}-setting_name>>
 
 [id="plugins-{type}s-{plugin}-options"]
-==== Example Output Configuration Options
+==== Log_analytics Output Configuration Options
 
 [cols="<,<,<",options="header",]
 |=======================================================================

@@ -1,5 +1,5 @@
 Gem::Specification.new do |s|
-  s.name          = 'logstash-output-logan'
+  s.name          = 'logstash-output-log_analytics'
   s.version       = '0.1.0'
   s.licenses      = ['Apache-2.0']
   s.summary       = 'Logstash Output Plugin for OCI Log Analytics'
