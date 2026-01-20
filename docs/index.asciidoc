@@ -23,7 +23,8 @@ include::{include_path}/plugin_header.asciidoc[]
 ==== Description
 
 A plugin for Oracle Cloud Infrastructure (OCI) Log Analytics service.
-This plugin groups incoming log events from Logstash by their log group ID and uploads it as a payload to OCI Log Analytics.
+This plugin groups incoming log events from Logstash by their log group ID,
+chunking them into smaller batches of maximum 2 MB size and uploads it as a ZIP payload to OCI Log Analytics.
 
 // Format anchors and links to support generated ids for versioning
 // Sample anchor: [id="plugins-{type}s-{plugin}-setting_name"]
@@ -63,7 +64,7 @@ This plugin groups incoming log events from Logstash by their log group ID and u
   * Value type is <<string,string>>
   * Default value is `nil`
 
-Sets the mandatory OCI Tenancy Namespace to which the collected log data will be uploaded
+Sets the mandatory OCI Tenancy Namespace to which the collected log data will be uploaded.
 
 [id="plugins-{type}s-{plugin}-config_file_location"]
 ===== `config_file_location` 
@@ -71,7 +72,7 @@ Sets the mandatory OCI Tenancy Namespace to which the collected log data will be
   * Value type is <<string,string>>
   * Default value is `nil`
 
-Add description here
+OCI config file path.
 
 [id="plugins-{type}s-{plugin}-profile_name"]
 ===== `profile_name` 
@@ -79,7 +80,7 @@ Add description here
   * Value type is <<string,string>>
   * Default value is `"DEFAULT"`
 
-Add description here
+Name of the profile to be used from the Config File.
 
 [id="plugins-{type}s-{plugin}-endpoint"]
 ===== `endpoint` 
@@ -87,46 +88,87 @@ Add description here
   * Value type is <<string,string>>
   * Default value is `nil`
 
-Add description here
+You can use an endpoint URL for Log Analytics client operations.
 
 [id="plugins-{type}s-{plugin}-auth_type"]
 ===== `auth_type` 
 
   * Value type is <<string,string>>
-  * Default value is "InstancePrincipal"
+  * Default value is `"InstancePrincipal"`
+
+Authentication type for Log Analytics client. Available options are: `"InstancePrincipal"` and `"ConfigFile"`.
+If `"InstancePrincipal"` is used, the client will initialize with an Instance Principals Security Token Signer.
+If `"ConfigFile"` is used, the client will initialize with the given Config File especified in <<plugins-{type}s-{plugin}-config_file_location>>.
+
+[id="plugins-{type}s-{plugin}-oci_domain"]
+===== `oci_domain` 
+
+  * Value type is <<string,string>>
+  * Default value is `nil`
 
 Add description here
 
-[id="plugins-{type}s-{plugin}-setting_name_6"]
-===== `setting_name_6` 
+[id="plugins-{type}s-{plugin}-dump_zip_file"]
+===== `dump_zip_file` 
 
-  * Value type is <<bytes,bytes>>
-  * Default value is {}
-
-Add description here
-
-[id="plugins-{type}s-{plugin}-setting_name_7"]
-===== `setting_name_7` 
-
-  * Value type is <<path,path>>
-  * Default value is {}
+  * Value type is <<boolean,boolean>>
+  * Default value is `false`
 
 Add description here
 
-[id="plugins-{type}s-{plugin}-setting_name_8"]
-===== `setting_name_8` 
+[id="plugins-{type}s-{plugin}-zip_file_location"]
+===== `zip_file_location` 
 
-  * Value type is <<password,password>>
-  * Default value is {}
+  * Value type is <<string,string>>
+  * Default value is `nil`
 
 Add description here
 
+[id="plugins-{type}s-{plugin}-plugin_retry_on_4xx"]
+===== `plugin_retry_on_4xx` 
 
-[id="plugins-{type}s-{plugin}-setting_name_9"]
-===== `setting_name_9` 
+  * Value type is <<boolean,boolean>>
+  * Default value is `false`
 
-  * Value type is <<uri,uri>>
-  * Default value is {}
+Add description here
+
+[id="plugins-{type}s-{plugin}-plugin_retry_on_5xx"]
+===== `plugin_retry_on_5xx` 
+
+  * Value type is <<boolean,boolean>>
+  * Default value is `false`
+
+Add description here
+
+[id="plugins-{type}s-{plugin}-retry_wait_on_4xx"]
+===== `retry_wait_on_4xx` 
+
+  * Value type is <<number,number>>
+  * Default value is `5`
+
+Add description here
+
+[id="plugins-{type}s-{plugin}-retry_wait_on_5xx"]
+===== `retry_wait_on_5xx` 
+
+  * Value type is <<number,number>>
+  * Default value is `5`
+
+Add description here
+
+[id="plugins-{type}s-{plugin}-retry_max_times_on_4xx"]
+===== `retry_max_times_on_4xx` 
+
+  * Value type is <<number,number>>
+  * Default value is `17`
+
+Add description here
+
+[id="plugins-{type}s-{plugin}-retry_max_times_on_5xx"]
+===== `retry_max_times_on_5xx` 
+
+  * Value type is <<number,number>>
+  * Default value is `17`
 
 Add description here
 
