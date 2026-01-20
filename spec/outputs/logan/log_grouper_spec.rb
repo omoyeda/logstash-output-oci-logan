@@ -7,6 +7,13 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
   let(:logger) { Logger.new(STDOUT) }
 
   # ---- inputs ----
+  let(:minimal_field_event) { simple_event = LogStash::Event.new({
+        "message" => "Minimum field test log",
+        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+  })}
+
   let(:simple_event) { simple_event = LogStash::Event.new({
         "message" => "Uploader test log",
         "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
@@ -167,11 +174,12 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
       {ENV["OCI_TEST_LOG_GROUP_ID"] => [[gid1_event]], ENV["LOGAN_LOGGROUP_ID_2"] => [[gid2_event]]}
   ]}
 
-  {nil => {"Access Control List" => "test:test"}}
+  # **** Expected Outputs for parse log set ****
+  let(:expect_output9) {""}
 
   subject { described_class.new(logger) }
 
-  context "Testing event inputs" do
+  context "Testing event inputs for grouping by log group id" do
     it "does not fail while grouping with group_by_logGroupId" do
       expect{subject.group_by_logGroupId(event_and_encoded)}.not_to raise_error
     end
@@ -208,6 +216,68 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
     it "returns multiple grouped events and some invalid ones" do
       output = subject.group_by_logGroupId(mult_and_encoded3)
       expect(output.values_at(0,1,4,5)).to eq(expect_output8)
+    end
+  end
+
+  context "Testing by parsing log sets" do
+    # input order -> get_or_parse_logSet(unparsed_logSet, event, record_hash, is_tag_exists)
+    it "returns same log set while parsing log set without tag" do
+      expect(subject.get_or_parse_logSet(
+        "log_set_unit_test_logs", simple_event, simple_event.to_hash, false
+      )).to eq("log_set_unit_test_logs")
+    end
+  end
+
+  context "Testing if records are valid" do
+    it "returns false for missing/invalid log group id" do
+      invalid_loggroup_event = LogStash::Event.new({
+        "message" => "Test log",
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => nil,
+      })
+      expect(subject.is_valid_record(invalid_loggroup_event.to_hash,invalid_loggroup_event)).to eq([false, "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"])
+    end
+    it "returns false for missing/invalid log source name" do
+      invalid_loggroup_event = LogStash::Event.new({
+        "message" => "Test log",
+        "oci_la_log_source_name" => "",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+      })
+      expect(subject.is_valid_record(invalid_loggroup_event.to_hash,invalid_loggroup_event)).to eq([false, "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"])
+    end
+    it "returns false for missing/invalid message in record" do
+      invalid_loggroup_event = LogStash::Event.new({
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+      })
+      expect(subject.is_valid_record(invalid_loggroup_event.to_hash,invalid_loggroup_event)).to eq([false, "MISSING_FIELD_MESSAGE"])
+    end
+    it "returns true for a field complete record" do
+      expect(subject.is_valid_record(simple_event.to_hash,simple_event)).to eq([true, nil])
+    end
+  end
+
+  context "extracting valid metadata" do
+    it "only accepts Hash metadata" do
+      metadata = [{"Access Control List" => "test:test"}]
+      expect(subject.get_valid_metadata(metadata)).to eq(nil)
+    end
+    it "returns the metadata" do
+      metadata = {"Access Control List" => "test:test", "Something" => 123}
+      expect(subject.get_valid_metadata(metadata)).to eq({"Access Control List" => "test:test", "Something" => 123})
+    end
+    it "does not accept (skip) array or Hash key/values" do
+      metadata = {"Something" => "Other", "ResourcesID" => ["ocid123", "ocid456"]}
+      expect(subject.get_valid_metadata(metadata)).to eq({"Something" => "Other"})
+
+      metadata = {"Sources" => {"id" => "ocid123"}, "Access Control List" => "foo:foo"}
+      expect(subject.get_valid_metadata(metadata)).to eq({"Access Control List" => "foo:foo"})
+
+      metadata = {"Access Control List" => "foo:foo", [1,"foo"] => "something"}
+      expect(subject.get_valid_metadata(metadata)).to eq({"Access Control List" => "foo:foo"})
+
+      metadata = {{"Number" => 2} => "something"}
+      expect(subject.get_valid_metadata(metadata)).to eq(nil)
     end
   end
 end
