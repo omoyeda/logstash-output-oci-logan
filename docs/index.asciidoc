@@ -35,54 +35,65 @@ This plugin groups incoming log events from Logstash by their log group ID and u
 [cols="<,<,<",options="header",]
 |=======================================================================
 |Setting |Input type|Required
-| <<plugins-{type}s-{plugin}-a_setting_name>> |<<boolean,boolean>>|No
-| <<plugins-{type}s-{plugin}-another_setting_name>> |<<hash,hash>>|No
-| <<plugins-{type}s-{plugin}-setting_name_3>> |<<string,string>>|No
-| <<plugins-{type}s-{plugin}-setting_name_4>> |<<number,number>>|No
-| <<plugins-{type}s-{plugin}-setting_name_5>> |<<array,array>>|No
-| <<plugins-{type}s-{plugin}-setting_name_6>> |<<bytes,bytes>>|No
-| <<plugins-{type}s-{plugin}-setting_name_7>> |<<path,path>>|No
-| <<plugins-{type}s-{plugin}-setting_name_8>> |<<password,password>>|No
-| <<plugins-{type}s-{plugin}-setting_name_9>> |<<uri,uri>>|No
+| <<plugins-{type}s-{plugin}-namespace>> |<<string,string>>|Yes
+| <<plugins-{type}s-{plugin}-config_file_location>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-profile_name>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-endpoint>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-auth_type>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-oci_domain>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-dump_zip_file>> |<<boolean,boolean>>|No
+| <<plugins-{type}s-{plugin}-zip_file_location>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-plugin_retry_on_4xx>> |<<boolean,boolean>>|No
+| <<plugins-{type}s-{plugin}-plugin_retry_on_5xx>> |<<boolean,boolean>>|No
+| <<plugins-{type}s-{plugin}-retry_wait_on_4xx>> |<<number,number>>|No
+| <<plugins-{type}s-{plugin}-retry_wait_on_5xx>> |<<number,number>>|No
+| <<plugins-{type}s-{plugin}-retry_max_times_on_4xx>> |<<number,number>>|No
+| <<plugins-{type}s-{plugin}-retry_max_times_on_5xx>> |<<number,number>>|No
+| <<plugins-{type}s-{plugin}-collection_source>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-http_proxy>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-proxy_ip>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-proxy_port>> |<<number,number>>|No
+| <<plugins-{type}s-{plugin}-proxy_username>> |<<string,string>>|No
+| <<plugins-{type}s-{plugin}-proxy_password>> |<<string,string>>|No
 |=======================================================================
 
-[id="plugins-{type}s-{plugin}-a_setting_name"]
-===== `a_setting_name` 
-
-  * Value type is <<boolean,boolean>>
-  * Default value is `true`
-
-Add description here
-
-[id="plugins-{type}s-{plugin}-another_setting_name"]
-===== `another_setting_name` 
-
-  * Value type is <<hash,hash>>
-  * Default value is `{}`
-
-Add description here
-
-[id="plugins-{type}s-{plugin}-setting_name_3"]
-===== `setting_name_3` 
+[id="plugins-{type}s-{plugin}-namespace"]
+===== `namespace` 
 
   * Value type is <<string,string>>
-  * Default value is `{}`
+  * Default value is `nil`
+
+Sets the mandatory OCI Tenancy Namespace to which the collected log data will be uploaded
+
+[id="plugins-{type}s-{plugin}-config_file_location"]
+===== `config_file_location` 
+
+  * Value type is <<string,string>>
+  * Default value is `nil`
 
 Add description here
 
-[id="plugins-{type}s-{plugin}-setting_name_4"]
-===== `setting_name_4` 
+[id="plugins-{type}s-{plugin}-profile_name"]
+===== `profile_name` 
 
-  * Value type is <<number,number>>
-  * Default value is `0`
+  * Value type is <<string,string>>
+  * Default value is `"DEFAULT"`
 
 Add description here
 
-[id="plugins-{type}s-{plugin}-setting_name_5"]
-===== `setting_name_5` 
+[id="plugins-{type}s-{plugin}-endpoint"]
+===== `endpoint` 
 
-  * Value type is <<array,array>>
-  * Default value is {}
+  * Value type is <<string,string>>
+  * Default value is `nil`
+
+Add description here
+
+[id="plugins-{type}s-{plugin}-auth_type"]
+===== `auth_type` 
+
+  * Value type is <<string,string>>
+  * Default value is "InstancePrincipal"
 
 Add description here
 
