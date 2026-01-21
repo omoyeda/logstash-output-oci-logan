@@ -113,7 +113,7 @@ Add description here
   * Value type is <<boolean,boolean>>
   * Default value is `false`
 
-Add description here
+If enabled, the plugin will dump the payload locally into the file location specified in <<plugins-{type}s-{plugin}-zip_file_location>>.
 
 [id="plugins-{type}s-{plugin}-zip_file_location"]
 ===== `zip_file_location` 
@@ -186,6 +186,30 @@ One of: `logstash` or `kubernetes_solution`
   * Default value is `nil`
 
 Proxy IP to be used. If set, Log Analytics client will send requests via the specified proxy.
+
+[id="plugins-{type}s-{plugin}-proxy_port"]
+===== `proxy_port` 
+
+  * Value type is <<number,number>>
+  * Default value is `80`
+
+Port for the specified proxy.
+
+[id="plugins-{type}s-{plugin}-proxy_username"]
+===== `proxy_username` 
+
+  * Value type is <<string,string>>
+  * Default value is `nil`
+
+Proxy username.
+
+[id="plugins-{type}s-{plugin}-proxy_password"]
+===== `proxy_password` 
+
+  * Value type is <<string,string>>
+  * Default value is `nil`
+
+Proxy password.
 
 // The full list of Value Types is here: 
 // https://www.elastic.co/guide/en/logstash/current/configuration-file-structure.html
