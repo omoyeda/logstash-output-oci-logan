@@ -63,8 +63,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # Proxy parameters. Used for client
   # ---------------------------------------------------------------
   #****************************************************************
-  # The http proxy to be used
-  config :http_proxy, :validate => :string, :default => nil
   # The proxy_ip to be used
   config :proxy_ip, :validate => :string, :default => nil
   # The proxy_port to be used

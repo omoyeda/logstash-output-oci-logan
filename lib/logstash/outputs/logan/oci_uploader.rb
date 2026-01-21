@@ -447,10 +447,10 @@ module LogStash
           if !is_valid(input)
             collections_src.unshift("source:#{Source::LOGSTASH}")
           else
-            if input == "LogStash" or input == Source::KUBERNETES_SOLUTION.to_s
+            if input == Source::LOGSTASH.to_s or input == Source::KUBERNETES_SOLUTION.to_s
               collections_src.unshift("source:#{input}")
             else
-              # source not define ! using default source 'LogStash'
+              # source not define ! using default source 'LOGSTASH'
               collections_src.unshift("source:#{Source::LOGSTASH}")
             end
           end

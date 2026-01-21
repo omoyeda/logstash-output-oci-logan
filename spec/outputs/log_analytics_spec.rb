@@ -16,7 +16,8 @@ describe LogStash::Outputs::Logan do
     "retry_max_times_on_4xx" => 3,
     "plugin_retry_on_5xx" => true,
     "retry_wait_on_5xx" => 1,
-    "retry_max_times_on_5xx" => 3
+    "retry_max_times_on_5xx" => 3,
+    "collection_source" => "logstash"
   } }
   
   # let(:event) { LogStash::Event.new({ "message" => "Test log" }) }
@@ -166,8 +167,4 @@ describe LogStash::Outputs::Logan do
       }.to raise_error(LogStash::ConfigurationError)
     end
   end
-
-  # describe "" do
-    
-  # end
 end
