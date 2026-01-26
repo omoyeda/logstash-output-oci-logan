@@ -19,17 +19,73 @@ describe LogStash::Outputs::Logan do
     "retry_max_times_on_5xx" => 3,
     "collection_source" => "logstash"
   } }
+
+  let(:config_with_proxy) { {
+    "namespace" => ENV["OCI_NAMESPACE"] || "namespace",
+    "config_file_location" => ENV["OCI_CONFIG_PATH"] || nil,
+    "profile_name" => ENV["OCI_PROFILE_NAME"] || "default",
+    "dump_zip_file" => true,
+    "zip_file_location" => "/tmp/",
+    "plugin_retry_on_4xx" => true,
+    "retry_wait_on_4xx" => 1,
+    "retry_max_times_on_4xx" => 3,
+    "plugin_retry_on_5xx" => true,
+    "retry_wait_on_5xx" => 1,
+    "retry_max_times_on_5xx" => 3,
+    "collection_source" => "logstash",
+    "proxy_ip" => ENV["PROXY_IP"],
+    "proxy_port" => ENV["PROXY_PORT"]
+  } }
   
   # let(:event) { LogStash::Event.new({ "message" => "Test log" }) }
   let(:event) { LogStash::Event.new({
     "message" => "Test Log",
     "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
     "oci_la_log_source_name" => "Linux Syslog Logs",
-    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
-    "oci_la_metadata" => {"Access Control List" => "test:test"}
+    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
   }) }
   let(:event_encoded) { "foo" }
   let(:events_and_encoded) { { event => event_encoded } }
+
+  let(:event_with_metadata) { LogStash::Event.new({
+    "message" => "Test Log",
+    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+    "oci_la_log_source_name" => "Linux Syslog Logs",
+    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+    "oci_la_metadata" => {"Access Control List" => "test:test"}
+  }) }
+  let(:event_encoded_mdata) { "foo" }
+  let(:events_and_encoded_mdata) { { event_with_metadata => event_encoded_mdata } }
+
+  let(:event_with_metadata) { LogStash::Event.new({
+    "message" => "Test Log",
+    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+    "oci_la_log_source_name" => "Linux Syslog Logs",
+    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+    "oci_la_metadata" => {"Access Control List" => "test:test"}
+  }) }
+  let(:event_encoded_mdata) { "foo" }
+  let(:events_and_encoded_mdata) { { event_with_metadata => event_encoded_mdata } }
+
+  let(:event_with_logset) { LogStash::Event.new({
+    "message" => "Test Log",
+    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+    "oci_la_log_source_name" => "Linux Syslog Logs",
+    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+    "oci_la_log_set" => "log_set_unit_test_logs"
+  }) }
+  let(:event_encoded_logset) { "foo" }
+  let(:events_and_encoded_logset) { { event_with_logset => event_encoded_logset } }
+
+  let(:event_with_tag) { LogStash::Event.new({
+    "message" => "Test Log",
+    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+    "oci_la_log_source_name" => "Linux Syslog Logs",
+    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+    "oci_la_log_set" => "log_set_unit_test_logs"
+  }) }
+  let(:event_encoded_tag) { "foo" }
+  let(:events_and_encoded_tag) { { event_with_tag => event_encoded_tag } }
 
   # invalid events
   let(:inv_event) { LogStash::Event.new({
@@ -88,6 +144,26 @@ describe LogStash::Outputs::Logan do
 
     it "receives and uploads event" do
       expect { subject.multi_receive_encoded(events_and_encoded) }.to_not raise_error
+      expect(subject.oci_uploader.response_status).to eq(200)
+    end
+
+    it "uploads event with valid metadata" do
+      expect { subject.multi_receive_encoded(events_and_encoded_mdata) }.to_not raise_error
+      expect(subject.oci_uploader.response_status).to eq(200)
+    end
+
+    it "uploads event with valid logset" do
+      expect { subject.multi_receive_encoded(events_and_encoded_logset) }.to_not raise_error
+      expect(subject.oci_uploader.response_status).to eq(200)
+    end
+
+    it "does not upload at middle" do
+      subject.multi_receive_encoded(illegal_events_and_encoded)
+      expect(subject.oci_uploader.response_status).to eq(404)
+    end
+
+    it "uploads event with valid tag" do
+      expect { subject.multi_receive_encoded(events_and_encoded_tag) }.to_not raise_error
       expect(subject.oci_uploader.response_status).to eq(200)
     end
   end
@@ -167,4 +243,13 @@ describe LogStash::Outputs::Logan do
       }.to raise_error(LogStash::ConfigurationError)
     end
   end
+
+  # context "Using client with proxy to upload payload" do
+  #   it "uploads using proxy" do
+  #     plugin_with_proxy = described_class.new(config_with_proxy)
+  #     plugin_with_proxy.register
+  #     expect { plugin_with_proxy.multi_receive_encoded(events_and_encoded) }.to_not raise_error
+  #     expect(plugin_with_proxy.oci_uploader.response_status).to eq(200)
+  #   end
+  # end
 end

@@ -63,7 +63,7 @@ chunking them into smaller batches of maximum 2 MB size and uploads it as a ZIP 
   * Value type is <<string,string>>
   * Default value is `nil`
 
-Sets the mandatory OCI Tenancy Namespace to which the collected log data will be uploaded.
+Sets the mandatory OCI Tenancy Namespace that will be used to upload the collected log data.
 
 [id="plugins-{type}s-{plugin}-config_file_location"]
 ===== `config_file_location` 
@@ -87,7 +87,7 @@ Name of the profile to be used from the Config File.
   * Value type is <<string,string>>
   * Default value is `nil`
 
-You can use an endpoint URL for Log Analytics client operations.
+Set an endpoint URL for Log Analytics client operations.
 
 [id="plugins-{type}s-{plugin}-auth_type"]
 ===== `auth_type` 
@@ -105,7 +105,7 @@ If `"ConfigFile"` is used, the client will initialize with the given Config File
   * Value type is <<string,string>>
   * Default value is `nil`
 
-Add description here
+Set the OCI domain for Log Analytics client
 
 [id="plugins-{type}s-{plugin}-dump_zip_file"]
 ===== `dump_zip_file` 
@@ -121,7 +121,7 @@ If enabled, the plugin will dump the payload locally into the file location spec
   * Value type is <<string,string>>
   * Default value is `nil`
 
-Add description here
+Sets the directory where the plugin will save the payload ZIP files that are generated when <<plugins-{type}s-{plugin}-dump_zip_file>> is enabled.
 
 [id="plugins-{type}s-{plugin}-plugin_retry_on_4xx"]
 ===== `plugin_retry_on_4xx` 
@@ -129,7 +129,8 @@ Add description here
   * Value type is <<boolean,boolean>>
   * Default value is `false`
 
-Add description here
+If enabled, the plugin will retry requests for 4XX HTTP error codes.
+Note: Plugin will not retry on error code: 429 - TOO MANY REQUESTS
 
 [id="plugins-{type}s-{plugin}-plugin_retry_on_5xx"]
 ===== `plugin_retry_on_5xx` 
@@ -137,23 +138,23 @@ Add description here
   * Value type is <<boolean,boolean>>
   * Default value is `false`
 
-Add description here
+If enabled, the plugin will retry requests for 5XX HTTP error codes.
 
 [id="plugins-{type}s-{plugin}-retry_wait_on_4xx"]
 ===== `retry_wait_on_4xx` 
 
   * Value type is <<number,number>>
-  * Default value is `5`
+  * Default value is `3`
 
-Add description here
+Delay in seconds between each retry when uploading fails with 4XX HTTP error codes
 
 [id="plugins-{type}s-{plugin}-retry_wait_on_5xx"]
 ===== `retry_wait_on_5xx` 
 
   * Value type is <<number,number>>
-  * Default value is `5`
+  * Default value is `3`
 
-Add description here
+Delay in seconds between each retry when uploading fails with 5XX HTTP error codes
 
 [id="plugins-{type}s-{plugin}-retry_max_times_on_4xx"]
 ===== `retry_max_times_on_4xx` 
@@ -161,7 +162,7 @@ Add description here
   * Value type is <<number,number>>
   * Default value is `17`
 
-Add description here
+Max amount of retries for 4XX HTTP error codes
 
 [id="plugins-{type}s-{plugin}-retry_max_times_on_5xx"]
 ===== `retry_max_times_on_5xx` 
@@ -169,7 +170,7 @@ Add description here
   * Value type is <<number,number>>
   * Default value is `17`
 
-Add description here
+Max amount of retries for 5XX HTTP error codes
 
 [id="plugins-{type}s-{plugin}-collection_source"]
 ===== `collection_source` 
@@ -177,7 +178,7 @@ Add description here
   * Value type is <<string,string>>
   * Default value is `logstash`
 
-One of: `logstash` or `kubernetes_solution`
+One of: `logstash` or `kubernetes_solution`.
 
 [id="plugins-{type}s-{plugin}-proxy_ip"]
 ===== `proxy_ip` 
@@ -186,6 +187,7 @@ One of: `logstash` or `kubernetes_solution`
   * Default value is `nil`
 
 Proxy IP to be used. If set, Log Analytics client will send requests via the specified proxy.
+<<plugins-{type}s-{plugin}-proxy_port>> needs to be set too if you intend to set a proxy for this plugin.
 
 [id="plugins-{type}s-{plugin}-proxy_port"]
 ===== `proxy_port` 
@@ -194,6 +196,7 @@ Proxy IP to be used. If set, Log Analytics client will send requests via the spe
   * Default value is `80`
 
 Port for the specified proxy.
+<<plugins-{type}s-{plugin}-proxy_ip>> needs to be set too if you intend to set a proxy for this plugin.
 
 [id="plugins-{type}s-{plugin}-proxy_username"]
 ===== `proxy_username` 
@@ -202,6 +205,8 @@ Port for the specified proxy.
   * Default value is `nil`
 
 Proxy username.
+Both <<plugins-{type}s-{plugin}-proxy_ip>> and <<plugins-{type}s-{plugin}-proxy_port>> need to be enabled too if you intend to set a proxy for this plugin.
+You will also need to set <<plugins-{type}s-{plugin}-proxy_password>>.
 
 [id="plugins-{type}s-{plugin}-proxy_password"]
 ===== `proxy_password` 
@@ -210,6 +215,8 @@ Proxy username.
   * Default value is `nil`
 
 Proxy password.
+Both <<plugins-{type}s-{plugin}-proxy_ip>> and <<plugins-{type}s-{plugin}-proxy_port>> need to be enabled too if you intend to set a proxy for this plugin.
+You will also need to set <<plugins-{type}s-{plugin}-proxy_username>>.
 
 // The full list of Value Types is here: 
 // https://www.elastic.co/guide/en/logstash/current/configuration-file-structure.html

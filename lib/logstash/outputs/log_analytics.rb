@@ -94,13 +94,13 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # Retry parameters
   # ---------------------------------------------------------------
   # Seconds to wait before next retry to flush on 4xx errors
-  config :retry_wait_on_4xx, :validate => :number, :default => 5 # seconds
+  config :retry_wait_on_4xx, :validate => :number, :default => 3 # seconds
   # The maximum number of times to retry to upload payload while failing
   # if -1 is set, then plugin will retry unlimited times
   config :retry_max_times_on_4xx, :validate => :number, :default => 17
 
   # Seconds to wait before next retry to flush on 5xx errors
-  config :retry_wait_on_5xx, :validate => :number, :default => 5 # seconds
+  config :retry_wait_on_5xx, :validate => :number, :default => 3 # seconds
   # The maximum number of times to retry to upload payload while failing
   # if -1 is set, then plugin will retry unlimited times
   config :retry_max_times_on_5xx, :validate => :number, :default => 17

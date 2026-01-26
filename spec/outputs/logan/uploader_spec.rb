@@ -1,3 +1,7 @@
+require 'oci/log_analytics/log_analytics_client'
+require 'oci/regions'
+require 'oci/config'
+
 require "logstash/devutils/rspec/spec_helper"
 require 'logstash/outputs/logan/oci_uploader'
 require "logstash/event"
@@ -6,7 +10,7 @@ require 'logger'
 describe LogStash::Outputs::LogAnalytics::Uploader do
   namespace = ENV["OCI_NAMESPACE"] || nil
   dump_zip_file = true
-  loganalytics_client = nil
+  loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new()
   collection_source = nil
   zip_file_location = "/tmp/"
   plugin_retry_on_4xx = nil
@@ -41,14 +45,20 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
 
   describe "Initialize Uploader" do
     it "does not fail while generating payload with sample logs" do
-      uploader = described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
-        zip_file_location, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx, retry_wait_on_5xx, retry_max_times_on_5xx, logger)
-
       tags_per_logGroupId = { ENV["OCI_TEST_LOG_GROUP_ID"] => "" }
       lrpes_for_logGroupId = { ENV["OCI_TEST_LOG_GROUP_ID"] => [[event]] }
-      expect { uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId) }.not_to raise_error
+      expect { subject.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId) }.not_to raise_error
     end
   end
+
+  # context "testing response status" do
+  #   it "returns 401 AUTHENTICATION_FAILED" do
+  #     tags_per_logGroupId = { ENV["OCI_TEST_LOG_GROUP_ID"] => "" }
+  #     lrpes_for_logGroupId = { ENV["OCI_TEST_LOG_GROUP_ID"] => [[event]] }
+  #     subject.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
+  #     expect(subject.response_status).to eq(401)
+  #   end
+  # end
 
   context "testing function return formats" do
     it "get_logSets_map_per_logGroupId returns Hash" do

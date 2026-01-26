@@ -31,6 +31,19 @@ describe LogStash::Outputs::LogAnalytics::Client do
     # end
   end
 
+  describe "Initialize using proxy" do
+    proxy_ip = ENV["PROXY_IP"]
+    proxy_port = ENV["PROXY_PORT"]
+    proxy_username = nil
+    proxy_password = nil
+    it "initializes using basic proxy configuration" do
+      client = described_class.new(config_file_location, profile_name, endpoint, auth_type,
+        oci_domain, proxy_ip, proxy_port, proxy_username, proxy_password, logger)
+      expect { client.initialize_loganalytics_client() }.not_to raise_error
+      expect(client.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
+    end
+  end
+
   # describe "Fail to initialize Log Analytics Client" do
   #   it "should not initialize with missing parameters" do
 
