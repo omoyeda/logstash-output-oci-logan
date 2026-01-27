@@ -52,6 +52,7 @@ output {
 
 You also want to make sure to add all mandatory fields to your log events.
 The mandatory fields your events must have are the following:
+
   * `oci_la_entity_id`
   The Entity OCID. Value type is <<string,string>>.
 
@@ -62,6 +63,7 @@ The mandatory fields your events must have are the following:
   The log group OCID for the log event. Value type is <<string,string>>.
 
 Optionally you can add these fields to your log events.
+
   * `oci_la_log_set`
   Log Set. Value type is <<string,string>>.
 
