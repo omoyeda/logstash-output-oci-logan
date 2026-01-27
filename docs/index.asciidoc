@@ -30,6 +30,26 @@ chunking them into smaller batches of maximum 2 MB size and uploads it as a ZIP 
 // Sample anchor: [id="plugins-{type}s-{plugin}-setting_name"]
 // Sample link: <<plugins-{type}s-{plugin}-setting_name>>
 
+==== Usage
+
+This is an example of Log Analytics output plugin config:
+[source,ruby]
+output {
+  log_analytics {
+    namespace => "TENANCY_NAMESPACE"
+    profile_name => "DEFAULT"
+    dump_zip_file => true
+    zip_file_location => "/tmp/"
+    config_file_location => "/path/to/oci_config/file.txt"
+    plugin_retry_on_4xx => true
+    retry_wait_on_4xx => 1
+    retry_max_times_on_4xx => 5
+    plugin_retry_on_5xx => true
+    retry_wait_on_5xx => 1
+    retry_max_times_on_5xx => 5
+  }
+}
+
 [id="plugins-{type}s-{plugin}-options"]
 ==== Log_analytics Output Configuration Options
 
@@ -63,7 +83,7 @@ chunking them into smaller batches of maximum 2 MB size and uploads it as a ZIP 
   * Value type is <<string,string>>
   * Default value is `nil`
 
-Sets the mandatory OCI Tenancy Namespace that will be used to upload the collected log data.
+Sets the mandatory OCI Log Analytics tenancy namespace used for the requests.
 
 [id="plugins-{type}s-{plugin}-config_file_location"]
 ===== `config_file_location` 
