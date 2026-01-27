@@ -36,17 +36,17 @@ This is an example of Log Analytics output plugin config:
 [source,ruby]
 output {
   log_analytics {
-    namespace => "TENANCY_NAMESPACE"
-    profile_name => "DEFAULT"
-    dump_zip_file => true
-    zip_file_location => "/tmp/"
-    config_file_location => "/path/to/oci_config/file.txt"
-    plugin_retry_on_4xx => true
-    retry_wait_on_4xx => 1
-    retry_max_times_on_4xx => 5
-    plugin_retry_on_5xx => true
-    retry_wait_on_5xx => 1
-    retry_max_times_on_5xx => 5
+    namespace => "TENANCY_NAMESPACE"                       (required)
+    profile_name => "DEFAULT"                              (optional)
+    dump_zip_file => true                                  (optional)
+    zip_file_location => "/tmp/"                           (optional)
+    config_file_location => "/path/to/oci_config/file.txt" (optional)
+    plugin_retry_on_4xx => true                            (optional)
+    retry_wait_on_4xx => 1                                 (optional)
+    retry_max_times_on_4xx => 5                            (optional)
+    plugin_retry_on_5xx => true                            (optional)
+    retry_wait_on_5xx => 1                                 (optional)
+    retry_max_times_on_5xx => 5                            (optional)
   }
 }
 
