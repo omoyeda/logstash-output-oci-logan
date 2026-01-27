@@ -50,6 +50,57 @@ output {
   }
 }
 
+You also want to make sure to add all mandatory fields to your log events.
+The mandatory fields your events must have are the following:
+  * `oci_la_entity_id`
+  The Entity OCID. Value type is <<string,string>>.
+
+  * `oci_la_log_source_name`
+  The corresponding Log Source name. Value type is <<string,string>>.
+
+  * `oci_la_log_group_id`
+  The log group OCID for the log event. Value type is <<string,string>>.
+
+Optionally you can add these fields to your log events.
+  * `oci_la_log_set`
+  Log Set. Value type is <<string,string>>.
+
+  * `tag`
+  You can add a tag for these events. Value type is <<string,string>>.
+
+  * `oci_la_metadata`
+  Metadata used to add things like Access Control Lists, in key-value pairs. Value type is <<hash,hash>>
+
+You can add those fields with a filter:
+[source,ruby]
+input {
+  your_input {
+    # ... other config
+    type => "your_logs"
+  }
+}
+filter{
+  if [type] == "your_logs" {
+    mutate {
+      add_field => {
+        "oci_la_entity_id" => "your_entity_ocid"
+        "oci_la_log_source_name" => "Your Log Source Name"
+        "oci_la_log_group_id" => "your_log_group_ocid"
+        "oci_la_log_set" => "your_log_set"
+        "tag" => "some_tag"
+      }
+    }
+    ruby {
+      code => '
+        event.set("oci_la_metadata",
+        { "Access Control List": "key:value"
+        })
+      '
+    }
+  }
+}
+
+
 [id="plugins-{type}s-{plugin}-options"]
 ==== Log_analytics Output Configuration Options
 

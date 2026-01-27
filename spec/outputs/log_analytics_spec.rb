@@ -82,7 +82,7 @@ describe LogStash::Outputs::Logan do
     "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
     "oci_la_log_source_name" => "Linux Syslog Logs",
     "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
-    "oci_la_log_set" => "log_set_unit_test_logs"
+    "tag" => "tag_example"
   }) }
   let(:event_encoded_tag) { "foo" }
   let(:events_and_encoded_tag) { { event_with_tag => event_encoded_tag } }
