@@ -87,6 +87,30 @@ describe LogStash::Outputs::Logan do
   let(:event_encoded_tag) { "foo" }
   let(:events_and_encoded_tag) { { event_with_tag => event_encoded_tag } }
 
+  let(:regex_event) { regex_event = LogStash::Event.new({
+        "message" => "Regex test log",
+        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+        "oci_la_log_set" => "log_set_unit_test_logs",
+        "oci_la_metadata" => {"Access Control List" => "test:test"},
+        "oci_la_log_set_ext_regex" => /(\w+)_/.source
+  })}
+  let(:regex_encoded) { "Regex test log" }
+  let(:regex_and_encoded) { { regex_event => regex_encoded } }
+
+
+  # let(:event_with_kubernetes) { event_with_kubernetes = LogStash::Event.new({
+  #       "message" => "Kubernetes test log",
+  #       "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+  #       "oci_la_log_source_name" => "Linux Syslog Logs",
+  #       "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+  #       "oci_la_metadata" => {"Access Control List" => "foo:foo"},
+  #       "kubernetes" => {"container_name" => "oci_test", "namespace_name" => "example"}
+  # })}
+  # let(:kubernetes_encoded) { "Kubernetes test log" }
+  # let(:kubernetes_and_encoded) { { kubernetes_encoded => event_with_kubernetes } }
+
   # invalid events
   let(:inv_event) { LogStash::Event.new({
     "message" => "",
@@ -129,102 +153,109 @@ describe LogStash::Outputs::Logan do
 
   subject { described_class.new(config) }
 
-  it 'should register without errors' do
+  it 'registers without errors' do
     expect { subject.register }.to_not raise_error
   end
 
-  context "receiving events" do
-    before do
-      subject.register
+  # receiving events
+  describe "#multi_receive_encoded" do
+    context "when receiving valid events" do
+      before do
+        subject.register
+      end
+
+      after do
+        subject.close
+      end
+
+      it "uploads basic event" do
+        expect { subject.multi_receive_encoded(events_and_encoded) }.to_not raise_error
+        expect(subject.oci_uploader.response_status).to eq(200)
+      end
+
+      it "uploads event with valid metadata" do
+        expect { subject.multi_receive_encoded(events_and_encoded_mdata) }.to_not raise_error
+        expect(subject.oci_uploader.response_status).to eq(200)
+      end
+
+      it "uploads event with valid logset" do
+        expect { subject.multi_receive_encoded(events_and_encoded_logset) }.to_not raise_error
+        expect(subject.oci_uploader.response_status).to eq(200)
+      end
+
+      it "uploads event with regex and logset" do
+        expect { subject.multi_receive_encoded(regex_and_encoded) }.to_not raise_error
+        expect(subject.oci_uploader.response_status).to eq(200)
+      end
+
+      # it "uploads event with kubernetes metadata" do
+      #   expect { subject.multi_receive_encoded(kubernetes_and_encoded) }.to_not raise_error
+      #   expect(subject.oci_uploader.response_status).to eq(200)
+      # end
+
+      it "uploads event with valid tag" do
+        expect { subject.multi_receive_encoded(events_and_encoded_tag) }.to_not raise_error
+        expect(subject.oci_uploader.response_status).to eq(200)
+      end
     end
 
-    after do
-      subject.close
+    context "when receiving invalid events" do
+      before do
+        subject.register
+        described_class.class_variable_set(:@@logger, logger)
+      end
+
+      after do
+        subject.close
+      end
+
+      it "skips event with missing message" do
+        subject.multi_receive_encoded(inv_events_and_encoded)
+        log_output.rewind
+        expect(log_output.read).to include("'message' field is empty or encoded, Skipping record.")
+      end
+
+      it "skips event with missing Log Group" do
+        subject.multi_receive_encoded(inv_events_and_encoded2)
+        log_output.rewind
+        expect(log_output.read).to include("Invalid record.'oci_la_log_group_id' must not be empty")
+      end
+
+      it "skips event with Missing Log Source name" do
+        subject.multi_receive_encoded(inv_events_and_encoded3)
+        log_output.rewind
+        expect(log_output.read).to include("Invalid record.'oci_la_log_source_name' must not be empty")
+      end
+
+      context "when invalid record comes in the middle" do
+        it "skips only the invalid record" do
+          subject.multi_receive_encoded(events_and_encoded)
+          expect(subject.oci_uploader.response_status).to eq(200)
+          subject.multi_receive_encoded(illegal_events_and_encoded)
+          expect(subject.oci_uploader.response_status).to eq(404)
+          subject.multi_receive_encoded(events_and_encoded_tag)
+          expect(subject.oci_uploader.response_status).to eq(200)
+        end
+      end
     end
 
-    it "receives and uploads event" do
-      expect { subject.multi_receive_encoded(events_and_encoded) }.to_not raise_error
-      expect(subject.oci_uploader.response_status).to eq(200)
-    end
+    context "when triggering 4xx codes" do
+      before do
+        subject.register
+      end
 
-    it "uploads event with valid metadata" do
-      expect { subject.multi_receive_encoded(events_and_encoded_mdata) }.to_not raise_error
-      expect(subject.oci_uploader.response_status).to eq(200)
-    end
+      after do
+        subject.close
+      end
 
-    it "uploads event with valid logset" do
-      expect { subject.multi_receive_encoded(events_and_encoded_logset) }.to_not raise_error
-      expect(subject.oci_uploader.response_status).to eq(200)
-    end
-
-    it "does not upload at middle" do
-      subject.multi_receive_encoded(illegal_events_and_encoded)
-      expect(subject.oci_uploader.response_status).to eq(404)
-    end
-
-    it "uploads event with valid tag" do
-      expect { subject.multi_receive_encoded(events_and_encoded_tag) }.to_not raise_error
-      expect(subject.oci_uploader.response_status).to eq(200)
+      context "with non-existent log group id" do
+        it "triggers 404 NotAuthorizedOrNotFound" do
+          subject.multi_receive_encoded(illegal_events_and_encoded)
+          expect(subject.oci_uploader.response_status).to eq(404)
+        end
+      end
     end
   end
-
-  context "Receiving Invalid events" do
-    before do
-      subject.register
-      described_class.class_variable_set(:@@logger, logger)
-    end
-
-    after do
-      subject.close
-    end
-
-    it "receives event with Missing message" do
-      subject.multi_receive_encoded(inv_events_and_encoded)
-      log_output.rewind
-      expect(log_output.read).to include("'message' field is empty or encoded, Skipping record.")
-    end
-
-    it "receives event with Missing Log Group" do
-      subject.multi_receive_encoded(inv_events_and_encoded2)
-      log_output.rewind
-      expect(log_output.read).to include("Invalid record.'oci_la_log_group_id' must not be empty")
-    end
-
-    it "receives event with Missing Log Source name" do
-      subject.multi_receive_encoded(inv_events_and_encoded3)
-      log_output.rewind
-      expect(log_output.read).to include("Invalid record.'oci_la_log_source_name' must not be empty")
-    end
-
-    # it "receives records with fake or non existent log group ids" do
-    #   subject.multi_receive_encoded(illegal_events_and_encoded)
-    #   log_output.rewind
-    #   expect(log_output.read).to include("Authorization failed or requested resource not found.")
-    # end
-  end
-
-  context "triggering 4xx codes" do
-    before do
-      subject.register
-    end
-
-    after do
-      subject.close
-    end
-
-    it "receives records with fake or non existent log group ids (404 NotAuthorizedOrNotFound)" do
-      subject.multi_receive_encoded(illegal_events_and_encoded)
-      expect(subject.oci_uploader.response_status).to eq(404)
-    end
-  end
-
-  # describe "Plugin receives invalid records" do
-  #   it "Receives missing oci_la_log_group_id" do
-  #     subject.register
-  #     expect { subject.multi_receive_encoded(inv_events_and_encoded) }.to_not raise_error
-  #     subject.close
-  #   end
-  # end
 
   describe "invalid configuration test" do
     let(:invalid_config) {{"namespace" => nil}}

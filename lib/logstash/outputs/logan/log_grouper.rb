@@ -15,11 +15,11 @@ class LogGroup
 
   MAX_PAYLOAD_SIZE_BYTES = 2 * 1024 * 1024 # 2 MB
   
-  def initialize(logger)
+  def initialize(logger, kubernetes_metadata_keys_mapping)
     @@logger = logger
     @current_batch = []
     @current_batch_size = 0
-    # @kubernetes_metadata_keys_mapping = kubernetes_metadata_keys_mapping
+    @kubernetes_metadata_keys_mapping = kubernetes_metadata_keys_mapping
   end
 
   def group_by_logGroupId(events_encoded)
@@ -360,7 +360,9 @@ class LogGroup
     kubernetes_metadata = flatten(event.get("kubernetes"))
     kubernetes_metadata.each do |key, value|
       if @kubernetes_metadata_keys_mapping.has_key?(key)
+        @@logger.debug{"!------- FIRST CONDITION MET-------!"}
           if !is_valid(oci_la_metadata[@kubernetes_metadata_keys_mapping[key]])
+            @@logger.debug{"!------- SECOND CONDITION MET-------!"}
             oci_la_metadata[@kubernetes_metadata_keys_mapping[key]] = json_message_handler(key, value)
           end
       end
