@@ -15,11 +15,10 @@ class LogGroup
 
   MAX_PAYLOAD_SIZE_BYTES = 2 * 1024 * 1024 # 2 MB
   
-  def initialize(logger, kubernetes_metadata_keys_mapping)
+  def initialize(logger)
     @@logger = logger
     @current_batch = []
     @current_batch_size = 0
-    @kubernetes_metadata_keys_mapping = kubernetes_metadata_keys_mapping
   end
 
   def group_by_logGroupId(events_encoded)
@@ -154,10 +153,6 @@ class LogGroup
                 next
             end
 
-            if record_hash.has_key?("kubernetes")
-              event.set("oci_la_metadata", get_kubernetes_metadata(event.get("oci_la_metadata"),event))
-            end
-
             if tag_metadata_map.has_key?(event.get("tag"))
               event.set("oci_la_metadata", tag_metadata_map[event.get("tag")])
             else
@@ -244,11 +239,6 @@ class LogGroup
           @@logger.trace {"Record is nil, ignoring the record"}
         end
       end
-
-      # tag_metrics_set.each do |tag,metricsLabels|
-      #     latency_avg = (metricsLabels.latency / metricsLabels.records_per_tag).round(3)
-      #     @@prometheusMetrics.chunk_time_to_receive.observe(latency_avg, labels: { worker_id: metricsLabels.worker_id, tag: tag})
-      # end
 
       # Push any remaining chunks
       current_chunks.each do | log_group_id, chunk |
@@ -338,40 +328,6 @@ class LogGroup
           return true,invalid_reason
         end
     end
-  end
-
-  def flatten(kubernetes_metadata)
-    kubernetes_metadata.each_with_object({}) do |(key, value), hash|
-      hash[key] = value
-      if value.is_a? Hash
-        flatten(value).map do |hash_key, hash_value|
-          hash["#{key}.#{hash_key}"] = hash_value
-        end
-      end
-    end
-  end
-
-  def get_kubernetes_metadata(oci_la_metadata, event)
-    # oci_la_metadata -> Hash
-    # event -> LogStash::Event
-    if oci_la_metadata == nil
-      oci_la_metadata = {}
-    end
-    kubernetes_metadata = flatten(event.get("kubernetes"))
-    kubernetes_metadata.each do |key, value|
-      if @kubernetes_metadata_keys_mapping.has_key?(key)
-        @@logger.debug{"!------- FIRST CONDITION MET-------!"}
-          if !is_valid(oci_la_metadata[@kubernetes_metadata_keys_mapping[key]])
-            @@logger.debug{"!------- SECOND CONDITION MET-------!"}
-            oci_la_metadata[@kubernetes_metadata_keys_mapping[key]] = json_message_handler(key, value)
-          end
-      end
-    end
-    return oci_la_metadata
-    rescue => ex
-      @@logger.error {"Error occurred while getting kubernetes oci_la_metadata:
-                        error message: #{ex}"}
-      return oci_la_metadata
   end
 
   def json_message_handler(key, message)

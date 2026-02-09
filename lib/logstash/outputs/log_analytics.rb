@@ -106,13 +106,13 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   config :retry_max_times_on_5xx, :validate => :number, :default => 17
 
   # The kubernetes_metadata_keys_mapping
-  config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {
-    "container_name"=>"Container",
-    "namespace_name"=>"Namespace",
-    "pod_name"=>"Pod",
-    "container_image"=>"Container Image Name",
-    "host"=>"Node"
-  }
+  # config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {
+  #   "container_name"=>"Container",
+  #   "namespace_name"=>"Namespace",
+  #   "pod_name"=>"Pod",
+  #   "container_image"=>"Container Image Name",
+  #   "host"=>"Node"
+  # }
   config :collection_source, :validate => :string, :default => Source::LOGSTASH
 
   # Default function for the plugin - same as initilize method, meant to enforce having super called
@@ -146,11 +146,11 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # This function is resposible for getting the events from Logstash
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
-    log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@@logger, kubernetes_metadata_keys_mapping)
+    log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@@logger)
     incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
     tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
     
-    @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
+    @oci_uploader.show_dropped_messages(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
     @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
   end
 

@@ -45,8 +45,6 @@ module LogStash
           @retry_max_times_on_4xx = retry_max_times_on_4xx
           @retry_wait_on_5xx = retry_wait_on_5xx
           @retry_max_times_on_5xx = retry_max_times_on_5xx
-          @metricsLabels_array = []
-          @logGroup_metrics_map = Hash.new
 
           # retry_strategy_map = {
           #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(404, 'NotAuthorizedOrNotFound') => true,
@@ -67,7 +65,7 @@ module LogStash
         end
         
         # upload zipped stream to oci
-        def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, metricsLabels_array)
+        def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream)
           tries = 0
           begin
             collection_src_prop = getCollectionSource(@collection_source)
@@ -84,15 +82,6 @@ module LogStash
 
             if !response.nil?  && response.status == 200 then
               headers = response.headers
-              # if metricsLabels_array != nil
-              #     metricsLabels_array.each { |metricsLabels|
-              #       @@prometheusMetrics.records_posted.set(metricsLabels.records_valid, labels: { worker_id: metricsLabels.worker_id,
-              #                                                                             tag: metricsLabels.tag,
-              #                                                                             oci_la_log_group_id: metricsLabels.logGroupId,
-              #                                                                             oci_la_log_source_name: metricsLabels.logSourceName,
-              #                                                                             oci_la_log_set: metricsLabels.logSet})
-              #     }
-              # end
 
               @@logger.info {"The payload has been successfully uploaded to logAnalytics -
                               oci_la_log_group_id: #{oci_la_log_group_id},
@@ -201,104 +190,19 @@ module LogStash
                 @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
               end
             end
-
-
-            # if error_code.between?(500,599) && @plugin_retry_on_5xx
-            #   if tries < @retry_max_times_on_5xx
-            #     tries += 1
-            #     @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times_on_5xx} attempts"}
-            #     sleep @retry_wait_on_5xx
-            #     @@logger.info {"Wait time Over"}
-            #     retry
-            #   else
-            #     @@logger.error {"Failed to upload the payload - : retried #{@retry_max_times_on_5xx} times"}
-            #   end
-            # end
-
-            # @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times} attempts"}
-            # sleep @retry_wait
-            # @@logger.info {"Wait time OVER - Reuploading"}
-            # response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
-            #                                 logGroupId=oci_la_log_group_id ,
-            #                                 uploadLogEventsFileDetails=zippedstream,
-            #                                 opts)
-            # @@logger.info {"DONE UPLOADING"}
           rescue => ex
             error_reason = ex
             @@logger.error {"oci upload exception : Error while uploading the payload. #{ex}"}
-            # ensure
-            #     if error_reason != nil && metricsLabels_array != nil
-            #         metricsLabels_array.each { |metricsLabels|
-            #           @@prometheusMetrics.records_error.set(metricsLabels.records_valid, labels: {worker_id: metricsLabels.worker_id,
-            #                                                                                 tag: metricsLabels.tag,
-            #                                                                                 oci_la_log_group_id: metricsLabels.logGroupId,
-            #                                                                                 oci_la_log_source_name: metricsLabels.logSourceName,
-            #                                                                                 oci_la_log_set: metricsLabels.logSet,
-            #                                                                                 error_code: error_code,
-            #                                                                                 reason: error_reason})
-            #         }
-            # if tries < @retry_max_times
-            #   tries += 1
-            #   @@logger.warn {"Retrying to upload the payload: #{tries} of #{@retry_max_times} attempts"}
-            #   sleep @retry_wait
-            #   @@logger.info {"Wait time OVER - for ANY"}
-            #   retry
-            # else
-            #   @@logger.error {"Failed to upload the payload - : retried #{@retry_max_times} times"}
-            # end
           end
         end
 
-        def setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
-          valid_message_per_tag = Hash.new
-          logGroup_metrics_map = Hash.new
-          # metricsLabels_array = []
-
+        def show_dropped_messages(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
           incoming_records_per_tag.each do |key,value|
             dropped_messages = (invalid_records_per_tag.has_key?(key)) ? invalid_records_per_tag[key].to_i : 0
             valid_messages = value.to_i - dropped_messages
-            valid_message_per_tag[key] = valid_messages
-
-            metricsLabels = tag_metrics_set[key]
-            if metricsLabels == nil
-                metricsLabels = MetricsLabels.new
-            end
-            metricsLabels.records_valid = valid_messages
-            # logGroup_metrics_map will have logGroupId as key and metricsLabels_array as value.
-            # In a chunk we can have different logGroupIds but we are creating payloads based on logGroupId and that can internally have different logSourceName and tag data.
-            # Using logGroup_metrics_map, for a given chunk, we can produce the metrics with proper logGroupId and its corresponding values.
-            if metricsLabels.logGroupId != nil
-                if @logGroup_metrics_map.has_key?(metricsLabels.logGroupId)
-                  @metricsLabels_array = @logGroup_metrics_map[metricsLabels.logGroupId]
-                else
-                  @metricsLabels_array = []
-                end
-                @metricsLabels_array.push(metricsLabels)
-                @logGroup_metrics_map[metricsLabels.logGroupId] = @metricsLabels_array
-            end
-
-            # @@prometheusMetrics.records_received.set(value.to_i, labels: { worker_id: metricsLabels.worker_id,
-            #                                                                 tag: key,
-            #                                                                 oci_la_log_group_id: metricsLabels.logGroupId,
-            #                                                                 oci_la_log_source_name: metricsLabels.logSourceName,
-            #                                                                 oci_la_log_set: metricsLabels.logSet})
-
-            # @@prometheusMetrics.records_invalid.set(dropped_messages, labels: { worker_id: metricsLabels.worker_id,
-            #                                                                       tag: key,
-            #                                                                       oci_la_log_group_id: metricsLabels.logGroupId,
-            #                                                                       oci_la_log_source_name: metricsLabels.logSourceName,
-            #                                                                       oci_la_log_set: metricsLabels.logSet,
-            #                                                                       reason: metricsLabels.invalid_reason})
-            # @@prometheusMetrics.records_valid.set(valid_messages, labels: { worker_id: metricsLabels.worker_id,
-            #                                                                     tag: key,
-            #                                                                       oci_la_log_group_id: metricsLabels.logGroupId,
-            #                                                                       oci_la_log_source_name: metricsLabels.logSourceName,
-            #                                                                       oci_la_log_set: metricsLabels.logSet})
-
             if dropped_messages > 0
               @@logger.info {"Messages: #{value.to_i} \t Valid: #{valid_messages} \t Invalid: #{dropped_messages} \t tag:#{key}"}
             end
-            @@logger.debug {"Messages: #{value.to_i} \t Valid: #{valid_messages} \t Invalid: #{dropped_messages} \t tag:#{key}"}
           end
         end
 
@@ -313,8 +217,6 @@ module LogStash
                   oci_la_log_set = nil
                   logSets_per_logGroupId_map = Hash.new
 
-                  @metricsLabels_array = @logGroup_metrics_map[oci_la_log_group_id]
-
                   # Only MAX_FILES_PER_ZIP (100) files are allowed, which will be grouped and zipped.
                   # Due to MAX_FILES_PER_ZIP constraint, for a oci_la_log_group_id, we can get more than one zip file and those many api calls will be made.
                   logSets_per_logGroupId_map, oci_la_global_metadata = get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
@@ -327,11 +229,10 @@ module LogStash
                             zippedstream,number_of_records = get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
                             if zippedstream != nil
                               zippedstream.rewind #reposition buffer pointer to the beginning
-                              upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream, @metricsLabels_array)
+                              upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream)
                             end
                         end
                       }.real.round(3)
-                      # @@prometheusMetrics.chunk_time_to_upload.observe(chunk_upload_time_taken, labels: { worker_id: @@worker_id, oci_la_log_group_id: oci_la_log_group_id})
                     end
                 ensure
                   zippedstream&.close

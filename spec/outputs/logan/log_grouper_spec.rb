@@ -142,27 +142,6 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
   let(:mult_and_encoded2) { { gid1_event => gid1_encoded, gid2_event => gid2_encoded, gid1_event_alt => gid1_encoded_alt, gid2_event_alt => gid2_encoded_alt } }
   let(:mult_and_encoded3) { { gid1_event => gid1_encoded, gid2_event => gid2_encoded, gid1_event_inv => gid1_encoded_inv, gid2_event_inv => gid2_encoded_inv } }
 
-  let(:event_with_kubernetes) { event_with_kubernetes = LogStash::Event.new({
-        "message" => "Kubernetes test log",
-        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-        "oci_la_log_source_name" => "Linux Syslog Logs",
-        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
-        "oci_la_metadata" => {"Access Control List" => "foo:foo"},
-        "kubernetes" => {"container_name" => "oci_test", "namespace_name" => "example"}
-  })}
-  let(:kubernetes_encoded) { "Kubernetes test log" }
-  let(:kubernetes_and_encoded) { { kubernetes_encoded => event_with_kubernetes } }
-
-  # this event kubernetes has no matching fields for the configured kubernetes_metadata_keys_mapping
-  let(:event_with_kubernetes2) { event_with_kubernetes = LogStash::Event.new({
-        "message" => "Kubernetes test log",
-        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-        "oci_la_log_source_name" => "Linux Syslog Logs",
-        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
-        "oci_la_metadata" => {"Access Control List" => "foo:foo"},
-        "kubernetes" => {"field" => "oci_test", "other_field" => "example"}
-  })}
-
   # expected outputs
   # incoming_records_per_tag,invalid_records_per_tag,    ->X- tag_metrics_set,logGroup_labels_set,
   #     tags_per_logGroupId,lrpes_for_logGroupId
@@ -210,9 +189,7 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
   # **** Expected Outputs for parse log set ****
   let(:expect_output9) { "log_set_unit_test" }
 
-  let(:kubernetes_metadata_keys_mapping) { {"container_name"=>"Container", "namespace_name"=>"Namespace", "pod_name"=>"Pod",
-            "container_image"=>"Container Image Name","host"=>"Node"} }
-  subject { described_class.new(logger, kubernetes_metadata_keys_mapping) }
+  subject { described_class.new(logger) }
 
   describe "#group_by_logGroupId" do
     context "when grouping by log group id" do
@@ -341,21 +318,6 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
 
         metadata = {{"Number" => 2} => "something"}
         expect(subject.get_valid_metadata(metadata)).to eq(nil)
-      end
-    end
-  end
-
-  describe "#get_kubernetes_metadata" do
-    context "when kubernetes match config fields" do
-      it "returns kubernetes metadata" do
-        oci_la_metadata = event_with_kubernetes.get('oci_la_metadata')
-        expect(subject.get_kubernetes_metadata(oci_la_metadata, event_with_kubernetes)).to eq({"Access Control List" => "foo:foo", "Container" => "oci_test", "Namespace" => "example"})
-      end
-    end
-    context "when kubernetes do not match config" do
-      it "returns the normal oci_la_metadata" do
-        oci_la_metadata = event_with_kubernetes2.get('oci_la_metadata')
-        expect(subject.get_kubernetes_metadata(oci_la_metadata, event_with_kubernetes2)).to eq({"Access Control List" => "foo:foo"})
       end
     end
   end
