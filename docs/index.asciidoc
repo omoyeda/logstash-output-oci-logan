@@ -219,7 +219,7 @@ If enabled, the plugin will retry requests for 5XX HTTP error codes.
   * Value type is <<number,number>>
   * Default value is `3`
 
-Delay in seconds between each retry when uploading fails with 4XX HTTP error codes
+Delay in seconds between each retry when the payload fails to upload with 4XX HTTP error codes.
 
 [id="plugins-{type}s-{plugin}-retry_wait_on_5xx"]
 ===== `retry_wait_on_5xx` 
@@ -227,7 +227,7 @@ Delay in seconds between each retry when uploading fails with 4XX HTTP error cod
   * Value type is <<number,number>>
   * Default value is `3`
 
-Delay in seconds between each retry when uploading fails with 5XX HTTP error codes
+Delay in seconds between each retry when the payload fails to upload with 5XX HTTP error codes.
 
 [id="plugins-{type}s-{plugin}-retry_max_times_on_4xx"]
 ===== `retry_max_times_on_4xx` 
@@ -235,7 +235,7 @@ Delay in seconds between each retry when uploading fails with 5XX HTTP error cod
   * Value type is <<number,number>>
   * Default value is `17`
 
-Max amount of retries for 4XX HTTP error codes
+Max amount of retries for 4XX HTTP error codes.
 
 [id="plugins-{type}s-{plugin}-retry_max_times_on_5xx"]
 ===== `retry_max_times_on_5xx` 
@@ -243,15 +243,16 @@ Max amount of retries for 4XX HTTP error codes
   * Value type is <<number,number>>
   * Default value is `17`
 
-Max amount of retries for 5XX HTTP error codes
+Max amount of retries for 5XX HTTP error codes.
 
 [id="plugins-{type}s-{plugin}-collection_source"]
 ===== `collection_source` 
 
   * Value type is <<string,string>>
+  * One of: `logstash` or `kubernetes_solution`
   * Default value is `logstash`
 
-One of: `logstash` or `kubernetes_solution`.
+Metadata property used in payload. Merely descriptive.
 
 [id="plugins-{type}s-{plugin}-proxy_ip"]
 ===== `proxy_ip` 
