@@ -97,17 +97,11 @@ module LogStash
               when 400
                 error_reason = METRICS_SERVICE_ERROR_REASON_400
                 @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{serviceError.request_id}"}
-                if @plugin_retry_on_4xx == false
-                  raise serviceError
-                end
               when 401
                 error_reason = METRICS_SERVICE_ERROR_REASON_401
                 @@logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
                                 opc-request-id:#{serviceError.request_id}
                                 message: #{serviceError.message}"}
-                if @plugin_retry_on_4xx == false
-                  raise serviceError
-                end
               when 404
                 error_reason = METRICS_SERVICE_ERROR_REASON_404
                 @@logger.error {"oci upload exception : Error while uploading the payload. Authorization failed for given oci_la_log_group_id against given Tenancy Namespace.
@@ -115,47 +109,24 @@ module LogStash
                                 Namespace: #{@namespace}
                                 opc-request-id: #{serviceError.request_id}
                                 message: #{serviceError.message}"}
-                if @plugin_retry_on_4xx == false
-                  raise serviceError
-                end
               when 429
                 error_reason = METRICS_SERVICE_ERROR_REASON_429
                 @@logger.error {"oci upload exception : Error while uploading the payload. Too Many Requests - opc-request-id:#{serviceError.request_id}"}
-                raise serviceError
               when 500
                 error_reason = METRICS_SERVICE_ERROR_REASON_500
                 @@logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{serviceError.request_id}"}
-                if @plugin_retry_on_5xx == false
-                  raise serviceError
-                end
-
               when 502
                 error_reason = METRICS_SERVICE_ERROR_REASON_502
                 @@logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{serviceError.request_id}"}
-                if @plugin_retry_on_5xx == false
-                  raise serviceError
-                end
-
               when 503
                 error_reason = METRICS_SERVICE_ERROR_REASON_503
                 @@logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{serviceError.request_id}"}
-                if @plugin_retry_on_5xx == false
-                  raise serviceError
-                end
-
               when 504
                 error_reason = METRICS_SERVICE_ERROR_REASON_504
                 @@logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{serviceError.request_id}"}
-                if @plugin_retry_on_5xx == false
-                  raise serviceError
-                end
-
               when 505
                 error_reason = METRICS_SERVICE_ERROR_REASON_505
                 @@logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{serviceError.request_id}"}
-                if @plugin_retry_on_5xx == false
-                  raise serviceError
-                end
               else
                 error_reason = METRICS_SERVICE_ERROR_REASON_UNKNOWN
                 @@logger.error {"oci upload exception : Error while uploading the payload #{serviceError.message}"}

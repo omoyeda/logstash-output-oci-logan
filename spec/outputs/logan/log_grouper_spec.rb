@@ -26,6 +26,37 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
   let(:regex_encoded) { "Regex test log" }
   let(:regex_and_encoded) { { regex_event => regex_encoded } }
 
+  let(:logpath_event) { logpath_event = LogStash::Event.new({
+        "message" => "Log Path test log",
+        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+        "oci_la_log_path" => "some_log_path"
+  })}
+  let(:logpath_encoded) { "Log Path test log" }
+  let(:logpath_and_encoded) { { logpath_event => logpath_encoded } }
+
+  let(:logpath_tag_event) { logpath_tag_event = LogStash::Event.new({
+        "message" => "Log Path test log",
+        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+        "oci_la_log_path" => "",
+        "tag" => "tag_for_log_path"
+  })}
+  let(:logpath_tag_encoded) { "Log Path test log" }
+  let(:logpath_tag_and_encoded) { { logpath_tag_event => logpath_tag_encoded } }
+
+  let(:empty_logpath_event) { empty_logpath_event = LogStash::Event.new({
+        "message" => "Log Path test log",
+        "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"],
+        "oci_la_log_path" => ""
+  })}
+  let(:empty_logpath_encoded) { "Log Path test log" }
+  let(:empty_logpath_and_encoded) { { empty_logpath_event => empty_logpath_encoded } }
+
   let(:simple_event) { simple_event = LogStash::Event.new({
         "message" => "Uploader test log",
         "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
@@ -234,6 +265,20 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
       it "returns grouped events with parsed log set" do
         output = subject.group_by_logGroupId(regex_and_encoded)
         expect(output[5][ENV["OCI_TEST_LOG_GROUP_ID"]][0][0].get("oci_la_log_set")).to eq(expect_output9)
+      end
+    end
+    context "when providing optional fields" do
+      it "returns grouped event with log path" do
+        output = subject.group_by_logGroupId(logpath_and_encoded)
+        expect(output[5][ENV["OCI_TEST_LOG_GROUP_ID"]][0][0].get("oci_la_log_path")).to eq('some_log_path')
+      end
+      it "sets UNDEFINED to empty log path" do
+        output = subject.group_by_logGroupId(empty_logpath_and_encoded)
+        expect(output[5][ENV["OCI_TEST_LOG_GROUP_ID"]][0][0].get("oci_la_log_path")).to eq('UNDEFINED')
+      end
+      it "sets tag to empty log path" do
+        output = subject.group_by_logGroupId(logpath_tag_and_encoded)
+        expect(output[5][ENV["OCI_TEST_LOG_GROUP_ID"]][0][0].get("oci_la_log_path")).to eq('tag_for_log_path')
       end
     end
   end

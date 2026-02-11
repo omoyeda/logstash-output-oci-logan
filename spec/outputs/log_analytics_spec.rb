@@ -257,13 +257,4 @@ describe LogStash::Outputs::Logan do
       }.to raise_error(LogStash::ConfigurationError)
     end
   end
-
-  # context "Using client with proxy to upload payload" do
-  #   it "uploads using proxy" do
-  #     plugin_with_proxy = described_class.new(config_with_proxy)
-  #     plugin_with_proxy.register
-  #     expect { plugin_with_proxy.multi_receive_encoded(events_and_encoded) }.to_not raise_error
-  #     expect(plugin_with_proxy.oci_uploader.response_status).to eq(200)
-  #   end
-  # end
 end

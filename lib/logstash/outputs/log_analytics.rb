@@ -104,15 +104,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # The maximum number of times to retry to upload payload while failing
   # if -1 is set, then plugin will retry unlimited times
   config :retry_max_times_on_5xx, :validate => :number, :default => 17
-
-  # The kubernetes_metadata_keys_mapping
-  # config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {
-  #   "container_name"=>"Container",
-  #   "namespace_name"=>"Namespace",
-  #   "pod_name"=>"Pod",
-  #   "container_image"=>"Container Image Name",
-  #   "host"=>"Node"
-  # }
   config :collection_source, :validate => :string, :default => Source::LOGSTASH
 
   # Default function for the plugin - same as initilize method, meant to enforce having super called
@@ -124,9 +115,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   
     initialize_logger()
     @client = LogStash::Outputs::LogAnalytics::Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
-
-    # @@prometheusMetrics = PrometheusMetrics.instance
-    
     @client.initialize_loganalytics_client()
     @loganalytics_client = @client.loganalytics_client
 
