@@ -37,7 +37,6 @@ describe LogStash::Outputs::Logan do
     "proxy_port" => ENV["PROXY_PORT"]
   } }
   
-  # let(:event) { LogStash::Event.new({ "message" => "Test log" }) }
   let(:event) { LogStash::Event.new({
     "message" => "Test Log",
     "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
