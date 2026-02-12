@@ -9,6 +9,9 @@ require 'thread'
 
 module LogStash::Outputs::LogAnalytics
 class LogGroup
+  # this keeps track of skipped records for unit tests
+  attr_reader :skipped_last_record
+
   METRICS_INVALID_REASON_MESSAGE = "MISSING_FIELD_MESSAGE"
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
@@ -17,15 +20,12 @@ class LogGroup
   
   def initialize(logger)
     @@logger = logger
-    @current_batch = []
-    @current_batch_size = 0
   end
 
   def group_by_logGroupId(events_encoded)
     begin
       current = Time.now
       current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
-      events_buffer = []
       latency = 0
       records_per_tag = 0
 
@@ -39,22 +39,20 @@ class LogGroup
       tag_logSet_map = Hash.new
       tag_metadata_map = Hash.new
       timezoneValuesByTag = Hash.new
-      incoming_records = 0
-      lrpes_for_logGroupId = {}
 
       grouped = Hash.new { |h, k| h[k] = [] } # log_group_id => [chunks]
       current_chunks = Hash.new { |h, k| h[k] = { size: 0, events: [] } }
+
+      @skipped_last_record = false
       
       events_encoded.each do |event, encoded|
         time = event.get('@timestamp').time.to_f
-        incoming_records += 1
         metricsLabels = MetricsLabels.new
         if is_valid(encoded)
           begin
             record_hash = event.to_hash
             if record_hash.has_key?("worker_id") && is_valid(event.get("worker_id"))
                 metricsLabels.worker_id = event.get("worker_id")# ||= '0'
-                @@worker_id = event.get("worker_id")# ||= '0'
             end
             is_tag_exists = false
             if record_hash.has_key?("tag") && is_valid(event.get("tag"))
@@ -150,6 +148,7 @@ class LogGroup
                 else
                   @@logger.warn {"'message' field is empty or encoded, Skipping record."}
                 end
+                @skipped_last_record = true
                 next
             end
 
@@ -192,7 +191,6 @@ class LogGroup
             else
               event.set("oci_la_timezone", timezoneValuesByTag[event.get("tag")])
             end
-            # events_buffer << event
             # ---- chunk ----
             log_group_id = event.get("oci_la_log_group_id")
             next if log_group_id.nil?
@@ -305,6 +303,7 @@ class LogGroup
             @@logger.info {"InvalidRecord: #{event.to_s}"}
             @@logger.warn {"Invalid record. 'message' field is not present in the record."}
           end
+          @skipped_last_record = true
           return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_group_id") || !is_valid(event.get("oci_la_log_group_id"))
             invalid_reason = METRICS_INVALID_REASON_LOG_GROUP_ID
@@ -314,6 +313,7 @@ class LogGroup
             else
               @@logger.warn {"Invalid record.'oci_la_log_group_id' must not be empty"}
             end
+            @skipped_last_record = true
             return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_source_name") || !is_valid(event.get("oci_la_log_source_name"))
           invalid_reason = METRICS_INVALID_REASON_LOG_SOURCE_NAME
@@ -323,6 +323,7 @@ class LogGroup
           else
             @@logger.warn {"Invalid record.'oci_la_log_source_name' must not be empty"}
           end
+          @skipped_last_record = true
           return false,invalid_reason
         else
           return true,invalid_reason

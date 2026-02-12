@@ -173,6 +173,34 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
   let(:mult_and_encoded2) { { gid1_event => gid1_encoded, gid2_event => gid2_encoded, gid1_event_alt => gid1_encoded_alt, gid2_event_alt => gid2_encoded_alt } }
   let(:mult_and_encoded3) { { gid1_event => gid1_encoded, gid2_event => gid2_encoded, gid1_event_inv => gid1_encoded_inv, gid2_event_inv => gid2_encoded_inv } }
 
+  # invalid records with missing required fields
+  let(:inv_event) { LogStash::Event.new({
+    "message" => "",
+    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+    "oci_la_log_source_name" => "Linux Syslog Logs",
+    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
+    }) }
+  let(:inv_event_encoded) { "Invalid test Log with missing message" }
+  let(:inv_events_and_encoded) { { inv_event => inv_event_encoded } }
+  
+  let(:inv_event2) { LogStash::Event.new({
+    "message" => "Invalid test Log with missing log group id",
+    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+    "oci_la_log_source_name" => "Linux Syslog Logs",
+    "oci_la_log_group_id" => ""
+    }) }
+  let(:inv_event_encoded2) { "Invalid Test Log" }
+  let(:inv_events_and_encoded2) { { inv_event2 => inv_event_encoded2 } }
+
+  let(:inv_event3) { LogStash::Event.new({
+    "message" => "Invalid test Log with missing log source",
+    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+    "oci_la_log_source_name" => "",
+    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
+    }) }
+  let(:inv_event_encoded3) { "Invalid test Log with missing log source" }
+  let(:inv_events_and_encoded3) { { inv_event3 => inv_event_encoded3 } }
+
   # expected outputs
   # incoming_records_per_tag,invalid_records_per_tag,    ->X- tag_metrics_set,logGroup_labels_set,
   #     tags_per_logGroupId,lrpes_for_logGroupId
@@ -279,6 +307,20 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
       it "sets tag to empty log path" do
         output = subject.group_by_logGroupId(logpath_tag_and_encoded)
         expect(output[5][ENV["OCI_TEST_LOG_GROUP_ID"]][0][0].get("oci_la_log_path")).to eq('tag_for_log_path')
+      end
+    end
+    context "when records are missing required fields" do
+      it "skips the record with missing message" do
+        subject.group_by_logGroupId(inv_events_and_encoded)
+        expect(subject.skipped_last_record).to eq(true)
+      end
+      it "skips the record with missing log group id" do
+        subject.group_by_logGroupId(inv_events_and_encoded2)
+        expect(subject.skipped_last_record).to eq(true)
+      end
+      it "skips the record with missing log source" do
+        subject.group_by_logGroupId(inv_events_and_encoded3)
+        expect(subject.skipped_last_record).to eq(true)
       end
     end
   end

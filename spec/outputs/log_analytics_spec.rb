@@ -99,32 +99,32 @@ describe LogStash::Outputs::Logan do
   let(:regex_and_encoded) { { regex_event => regex_encoded } }
 
   # invalid events
-  let(:inv_event) { LogStash::Event.new({
-    "message" => "",
-    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-    "oci_la_log_source_name" => "Linux Syslog Logs",
-    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
-    }) }
-  let(:inv_event_encoded) { "Invalid Test Log" }
-  let(:inv_events_and_encoded) { { inv_event => inv_event_encoded } }
+  # let(:inv_event) { LogStash::Event.new({
+  #   "message" => "",
+  #   "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+  #   "oci_la_log_source_name" => "Linux Syslog Logs",
+  #   "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
+  #   }) }
+  # let(:inv_event_encoded) { "Invalid Test Log" }
+  # let(:inv_events_and_encoded) { { inv_event => inv_event_encoded } }
   
-  let(:inv_event2) { LogStash::Event.new({
-    "message" => "Invalid Test Log",
-    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-    "oci_la_log_source_name" => "Linux Syslog Logs",
-    "oci_la_log_group_id" => ""
-    }) }
-  let(:inv_event_encoded2) { "Invalid Test Log" }
-  let(:inv_events_and_encoded2) { { inv_event2 => inv_event_encoded2 } }
+  # let(:inv_event2) { LogStash::Event.new({
+  #   "message" => "Invalid Test Log",
+  #   "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+  #   "oci_la_log_source_name" => "Linux Syslog Logs",
+  #   "oci_la_log_group_id" => ""
+  #   }) }
+  # let(:inv_event_encoded2) { "Invalid Test Log" }
+  # let(:inv_events_and_encoded2) { { inv_event2 => inv_event_encoded2 } }
 
-  let(:inv_event3) { LogStash::Event.new({
-    "message" => "Invalid Test Log",
-    "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
-    "oci_la_log_source_name" => "",
-    "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
-    }) }
-  let(:inv_event_encoded3) { "Invalid Test Log" }
-  let(:inv_events_and_encoded3) { { inv_event3 => inv_event_encoded3 } }
+  # let(:inv_event3) { LogStash::Event.new({
+  #   "message" => "Invalid Test Log",
+  #   "oci_la_entity_id" => ENV["OCI_TEST_ENTITY_ID"],
+  #   "oci_la_log_source_name" => "",
+  #   "oci_la_log_group_id" => ENV["OCI_TEST_LOG_GROUP_ID"]
+  #   }) }
+  # let(:inv_event_encoded3) { "Invalid Test Log" }
+  # let(:inv_events_and_encoded3) { { inv_event3 => inv_event_encoded3 } }
 
   let(:illegal_event) { LogStash::Event.new({
     "message" => "Illegal Test Log",
@@ -191,23 +191,23 @@ describe LogStash::Outputs::Logan do
         subject.close
       end
 
-      it "skips event with missing message" do
-        subject.multi_receive_encoded(inv_events_and_encoded)
-        log_output.rewind
-        expect(log_output.read).to include("'message' field is empty or encoded, Skipping record.")
-      end
+      # it "skips event with missing message" do
+      #   subject.multi_receive_encoded(inv_events_and_encoded)
+      #   log_output.rewind
+      #   expect(log_output.read).to include("'message' field is empty or encoded, Skipping record.")
+      # end
 
-      it "skips event with missing Log Group" do
-        subject.multi_receive_encoded(inv_events_and_encoded2)
-        log_output.rewind
-        expect(log_output.read).to include("Invalid record.'oci_la_log_group_id' must not be empty")
-      end
+      # it "skips event with missing Log Group" do
+      #   subject.multi_receive_encoded(inv_events_and_encoded2)
+      #   log_output.rewind
+      #   expect(log_output.read).to include("Invalid record.'oci_la_log_group_id' must not be empty")
+      # end
 
-      it "skips event with Missing Log Source name" do
-        subject.multi_receive_encoded(inv_events_and_encoded3)
-        log_output.rewind
-        expect(log_output.read).to include("Invalid record.'oci_la_log_source_name' must not be empty")
-      end
+      # it "skips event with Missing Log Source name" do
+      #   subject.multi_receive_encoded(inv_events_and_encoded3)
+      #   log_output.rewind
+      #   expect(log_output.read).to include("Invalid record.'oci_la_log_source_name' must not be empty")
+      # end
 
       context "when invalid record comes in the middle" do
         it "skips only the invalid record" do

@@ -30,13 +30,10 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   concurrency :single
   default :codec, "line"
 
-  MAX_PAYLOAD_SIZE_BYTES = 2 * 1080 * 1080 # 2 MB
-
   @@logger = nil
   @loganalytics_client = nil
   # @@prometheusMetrics = nil
   @@logger_config_errors = []
-  @@encoded_messages_count = 0
 
   # ---------------------------------------------------------------
   # Parameters
@@ -124,19 +121,18 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       raise LogStash::ConfigurationError, "Error in config file : invalid #{invalid_field_name}"
     end
 
-    # @mutex = Mutex.new
     @oci_uploader = LogStash::Outputs::LogAnalytics::Uploader.new(@namespace, @dump_zip_file, @loganalytics_client, @collection_source,
                                  @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,
                                  @retry_wait_on_5xx, @retry_max_times_on_5xx, @@logger)
+    @log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@@logger)
   end
 
   # Default function for the plugin
   # This function is resposible for getting the events from Logstash
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
-    log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@@logger)
     incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
-    tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
+    tags_per_logGroupId,lrpes_for_logGroupId = @log_grouper.group_by_logGroupId(events_encoded)
     
     @oci_uploader.show_dropped_messages(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
     @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)

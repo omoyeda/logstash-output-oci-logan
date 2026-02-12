@@ -15,38 +15,36 @@ describe LogStash::Outputs::LogAnalytics::Client do
   proxy_password = nil
   logger = Logger.new(STDOUT)
 
-  describe "Initialize Log Analytics client" do
-    it "does not fail while initializing Log Analytics Client with ConfigFile" do
-      client = described_class.new(config_file_location, profile_name, endpoint, auth_type,
-        oci_domain, proxy_ip, proxy_port, proxy_username, proxy_password, logger)
-      expect { client.initialize_loganalytics_client() }.not_to raise_error
-      expect(client.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
+  proxy_ip = ENV["PROXY_IP"]
+  proxy_port = ENV["PROXY_PORT"]
+  proxy_username = nil
+  proxy_password = nil
+
+  describe "#initialize_loganalytics_client" do
+    context "with ConfigFile" do
+      it "initializes a Log Analytics Client" do
+        client = described_class.new(config_file_location, profile_name, endpoint, auth_type,
+          oci_domain, proxy_ip, proxy_port, proxy_username, proxy_password, logger)
+        expect { client.initialize_loganalytics_client() }.not_to raise_error
+        expect(client.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
+      end
+      
+      it "initializes using basic proxy configuration" do
+        client = described_class.new(config_file_location, profile_name, endpoint, auth_type,
+          oci_domain, proxy_ip, proxy_port, proxy_username, proxy_password, logger)
+        expect { client.initialize_loganalytics_client() }.not_to raise_error
+        expect(client.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
+      end
     end
-  
-    # it "does not fail while initializing with auth type InstancePrincipal" do
-    #   client2 = described_class.new(nil, nil, nil, "InstancePrincipal",
-    #     nil, nil, nil, nil, nil, logger)
-    #   expect { client2.initialize_loganalytics_client() }.not_to raise_error
-    #   expect(client2.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
+
+    # context "with InstancePrincipal" do
+      # TO DO: setup and test InstancePrincipal
+      # it "returns an InstancePrincipal authenticated client" do
+      #   client = described_class.new(nil, nil, nil, "InstancePrincipal",
+      #     nil, nil, nil, nil, nil, logger)
+      #   expect { client.initialize_loganalytics_client() }.not_to raise_error
+      #   expect(client.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
+      # end
     # end
   end
-
-  describe "Initialize using proxy" do
-    proxy_ip = ENV["PROXY_IP"]
-    proxy_port = ENV["PROXY_PORT"]
-    proxy_username = nil
-    proxy_password = nil
-    it "initializes using basic proxy configuration" do
-      client = described_class.new(config_file_location, profile_name, endpoint, auth_type,
-        oci_domain, proxy_ip, proxy_port, proxy_username, proxy_password, logger)
-      expect { client.initialize_loganalytics_client() }.not_to raise_error
-      expect(client.loganalytics_client).to be_an_instance_of(OCI::LogAnalytics::LogAnalyticsClient)
-    end
-  end
-
-  # describe "Fail to initialize Log Analytics Client" do
-  #   it "should not initialize with missing parameters" do
-
-  #   end
-  # end
 end
