@@ -1,41 +1,10 @@
 # encoding: utf-8
 require "logstash/outputs/base"
-
-# require 'zip'
-# require 'yajl'
-# require 'yajl/json_gem'
+require "logstash/namespace"
 require 'logger'
 
-require_relative 'logan/log_grouper'
-require_relative 'logan/oci_client'
-require_relative 'logan/oci_uploader'
-
-# require_relative '../metrics/prometheusMetrics'
+# require_relative 'logan/log_grouper'
 require_relative '../enums/source'
-
-# Import only specific OCI modules to improve load times and reduce the memory requirements.
-# require 'oci/auth/auth'
-# require 'oci/log_analytics/log_analytics'
-# require 'oci/log_analytics/log_analytics_client'
-
-# Workaround until OCI SDK releases a proper fix to load only specific service related modules/client.
-# require 'oci/api_client'
-# require 'oci/api_client_proxy_settings'
-# require 'oci/config'
-# require 'oci/config_file_loader'
-# require 'oci/errors'
-# require 'oci/global_context'
-# require 'oci/internal/internal'
-# require 'oci/regions'
-# require 'oci/regions_definitions'
-# require 'oci/response_headers'
-# require 'oci/response'
-# require 'oci/base_signer'
-# require 'oci/signer'
-# require 'oci/version'
-# require 'oci/waiter'
-# require 'oci/retry/retry'
-# require 'oci/object_storage/object_storage'
 
 module OCI
   class << self
@@ -49,18 +18,22 @@ module OCI
   end
 end
 
-# An logan output that does nothing.
 class LogStash::Outputs::Logan < LogStash::Outputs::Base
-  config_name "logan"
+  require 'logstash/outputs/logan/oci_client'
+  require 'logstash/outputs/logan/oci_uploader'
+  require 'logstash/outputs/logan/log_grouper'
+
+  attr_reader :oci_uploader
+  attr_reader :oci_client
+
+  config_name "log_analytics"
   concurrency :single
   default :codec, "line"
 
   @@logger = nil
-  @@loganalytics_client = nil
+  @loganalytics_client = nil
   # @@prometheusMetrics = nil
   @@logger_config_errors = []
-  # @@worker_id = '0'
-  @@encoded_messages_count = 0
 
   # ---------------------------------------------------------------
   # Parameters
@@ -87,8 +60,6 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # Proxy parameters. Used for client
   # ---------------------------------------------------------------
   #****************************************************************
-  # The http proxy to be used
-  config :http_proxy, :validate => :string, :default => nil
   # The proxy_ip to be used
   config :proxy_ip, :validate => :string, :default => nil
   # The proxy_port to be used
@@ -112,20 +83,24 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # OCI Output plugin 4xx exception handling - Except '429'
   config :plugin_retry_on_4xx, :validate => :boolean, :default => false
 
+  # OCI Output plugin 5xx exception handling
+  config :plugin_retry_on_5xx, :validate => :boolean, :default => false
 
-  ## ---------------------------------------------------------------
-  # Mutex related parameter for thread synchronization
+  
   # ---------------------------------------------------------------
-  #****************************************************************
-  # batch (or chunk) limit size
-  config :batch_size, :validate => :string, :default => "1m"
-  config :flush_interval, :validate => :number, :default => 10
-  config :retry_type, :validate => ["exponential_backoff", "fixed"]
-  config :flush_thread_count, :validate => :number, :default => 1
+  # Retry parameters
+  # ---------------------------------------------------------------
+  # Seconds to wait before next retry to flush on 4xx errors
+  config :retry_wait_on_4xx, :validate => :number, :default => 3 # seconds
+  # The maximum number of times to retry to upload payload while failing
+  # if -1 is set, then plugin will retry unlimited times
+  config :retry_max_times_on_4xx, :validate => :number, :default => 17
 
-  # The kubernetes_metadata_keys_mapping
-  # config :kubernetes_metadata_keys_mapping, :validate => :hash, :default => {"container_name":"Container",
-  #         "namespace_name":"Namespace", "pod_name":"Pod","container_image":"Container Image Name","host":"Node"}
+  # Seconds to wait before next retry to flush on 5xx errors
+  config :retry_wait_on_5xx, :validate => :number, :default => 3 # seconds
+  # The maximum number of times to retry to upload payload while failing
+  # if -1 is set, then plugin will retry unlimited times
+  config :retry_max_times_on_5xx, :validate => :number, :default => 17
   config :collection_source, :validate => :string, :default => Source::LOGSTASH
 
   # Default function for the plugin - same as initilize method, meant to enforce having super called
@@ -136,12 +111,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     end
   
     initialize_logger()
-    @client = Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
-
-    # @@prometheusMetrics = PrometheusMetrics.instance
-    
+    @client = LogStash::Outputs::LogAnalytics::Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
     @client.initialize_loganalytics_client()
-    @@loganalytics_client = @client.loganalytics_client
+    @loganalytics_client = @client.loganalytics_client
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
     if !is_mandatory_fields_valid
@@ -149,21 +121,20 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       raise LogStash::ConfigurationError, "Error in config file : invalid #{invalid_field_name}"
     end
 
-    # @mutex = Mutex.new
-    # @log_grouper = LogGroup.new(@@logger)
-    @oci_uploader = Uploader.new(@namespace, @dump_zip_file, @@loganalytics_client, @collection_source,
-                                 @zip_file_location, @plugin_retry_on_4xx, @@logger)
+    @oci_uploader = LogStash::Outputs::LogAnalytics::Uploader.new(@namespace, @dump_zip_file, @loganalytics_client, @collection_source,
+                                 @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,
+                                 @retry_wait_on_5xx, @retry_max_times_on_5xx, @@logger)
+    @log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@@logger)
   end
 
   # Default function for the plugin
   # This function is resposible for getting the events from Logstash
   # These events need to be written to a local file and be uploaded to OCI
   def multi_receive_encoded(events_encoded)
-    log_grouper = LogGroup.new(@@logger)
     incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,
-    tags_per_logGroupId,lrpes_for_logGroupId = log_grouper.group_by_logGroupId(events_encoded)
+    tags_per_logGroupId,lrpes_for_logGroupId = @log_grouper.group_by_logGroupId(events_encoded)
     
-    @oci_uploader.setup_metrics(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
+    @oci_uploader.show_dropped_messages(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
     @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
   end
 

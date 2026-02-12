@@ -7,62 +7,25 @@ require 'json'
 
 require 'thread'
 
+module LogStash::Outputs::LogAnalytics
 class LogGroup
+  # this keeps track of skipped records for unit tests
+  attr_reader :skipped_last_record
+
   METRICS_INVALID_REASON_MESSAGE = "MISSING_FIELD_MESSAGE"
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
+
+  MAX_PAYLOAD_SIZE_BYTES = 2 * 1024 * 1024 # 2 MB
   
   def initialize(logger)
     @@logger = logger
-    # @kubernetes_metadata_keys_mapping = kubernetes_metadata_keys_mapping
-  end
-
-  def _group_by_logGroupId(events_encoded)
-    current = Time.now
-    current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
-    events
-    latency = 0
-    records_per_tag = 0
-
-    events_encoded.each do |event, encoded|
-      next if encoded.nil?
-      events << event
-    end
-
-    @@logger.debug{"events: #{events.size}"}
-
-    # simple grouping
-    lrpes_for_logGroupId = events.group_by { |e| e.get('oci_la_log_group_id')}
-
-    @@logger.debug{"grouped into #{lrpes_for_logGroupId.size} groups"}
-
-    return {}, {}, {}, {}, {}, lrpes_for_logGroupId
-  end
-
-  def _group_by_logGroupId(events_encoded)
-    @@logger.debug{"MINIMAL VERSION - events_encoded size: #{events_encoded.size}"}
-
-    events_buffer = []
-    events_encoded.each do |event, encoded|
-      next if encoded.nil?
-      events_buffer << event
-    end
-
-    @@logger.debug{"events_buffer: #{events_buffer.size}"}
-
-    # simple grouping
-    lrpes_for_logGroupId = events_buffer.group_by { |e| e.get('oci_la_log_group_id')}
-
-    @@logger.debug{"grouped into #{lrpes_for_logGroupId.size} groups"}
-
-    return {}, {}, {}, {}, {}, lrpes_for_logGroupId
   end
 
   def group_by_logGroupId(events_encoded)
     begin
       current = Time.now
       current_f, current_s = current.to_f, current.strftime("%Y%m%dT%H%M%S%9NZ")
-      events_buffer = []
       latency = 0
       records_per_tag = 0
 
@@ -76,19 +39,20 @@ class LogGroup
       tag_logSet_map = Hash.new
       tag_metadata_map = Hash.new
       timezoneValuesByTag = Hash.new
-      incoming_records = 0
-      lrpes_for_logGroupId = {}
+
+      grouped = Hash.new { |h, k| h[k] = [] } # log_group_id => [chunks]
+      current_chunks = Hash.new { |h, k| h[k] = { size: 0, events: [] } }
+
+      @skipped_last_record = false
       
       events_encoded.each do |event, encoded|
         time = event.get('@timestamp').time.to_f
-        incoming_records += 1
         metricsLabels = MetricsLabels.new
         if is_valid(encoded)
           begin
             record_hash = event.to_hash
             if record_hash.has_key?("worker_id") && is_valid(event.get("worker_id"))
                 metricsLabels.worker_id = event.get("worker_id")# ||= '0'
-                @@worker_id = event.get("worker_id")# ||= '0'
             end
             is_tag_exists = false
             if record_hash.has_key?("tag") && is_valid(event.get("tag"))
@@ -173,22 +137,19 @@ class LogGroup
 
             #This will check for null or empty messages and only that record will be ignored.
             if !is_valid(event.get("message"))
-                metricsLabels.invalid_reason = OutOracleOCILogAnalytics::METRICS_INVALID_REASON_MESSAGE
+                metricsLabels.invalid_reason = METRICS_INVALID_REASON_MESSAGE
                 if is_tag_exists
                   if invalid_records_per_tag.has_key?(event.get("tag"))
                     invalid_records_per_tag[event.get("tag")] += 1
                   else
                     invalid_records_per_tag[event.get("tag")] = 1
-                    @@logger.warn {"'message' field is empty or encoded, Skipping records associated with tag : #{revent.get("tag")}."}
+                    @@logger.warn {"'message' field is empty or encoded, Skipping records associated with tag : #{event.get("tag")}."}
                   end
                 else
                   @@logger.warn {"'message' field is empty or encoded, Skipping record."}
                 end
+                @skipped_last_record = true
                 next
-            end
-
-            if record_hash.has_key?("kubernetes")
-              event.set("oci_la_metadata", get_kubernetes_metadata(event.get("oci_la_metadata"),event))
             end
 
             if tag_metadata_map.has_key?(event.get("tag"))
@@ -230,7 +191,26 @@ class LogGroup
             else
               event.set("oci_la_timezone", timezoneValuesByTag[event.get("tag")])
             end
-            events_buffer << event
+            # ---- chunk ----
+            log_group_id = event.get("oci_la_log_group_id")
+            next if log_group_id.nil?
+
+            event_size = event.to_json.bytesize
+
+            # Start a new chunk if needed
+            if current_chunks[log_group_id][:size] + event_size > MAX_PAYLOAD_SIZE_BYTES
+              @@logger.debug{"Current chunk is full, starting a new one"}
+              # finalize current chunk
+              grouped[log_group_id] << current_chunks[log_group_id][:events]
+              # start a new chunk
+              current_chunks[log_group_id] = {size: 0, events: []}
+            end
+
+            @@logger.debug{"Current chunk size: #{current_chunks[log_group_id][:size]}"}
+
+            # Add event to current chunk
+            current_chunks[log_group_id][:events] << event
+            current_chunks[log_group_id][:size] += event_size
           ensure
             # To get chunk_time_to_receive metrics per tag, corresponding latency and total records are calculated
             if tag_metrics_set.has_key?(event.get("tag"))
@@ -258,20 +238,16 @@ class LogGroup
         end
       end
 
-      # tag_metrics_set.each do |tag,metricsLabels|
-      #     latency_avg = (metricsLabels.latency / metricsLabels.records_per_tag).round(3)
-      #     @@prometheusMetrics.chunk_time_to_receive.observe(latency_avg, labels: { worker_id: metricsLabels.worker_id, tag: tag})
-      # end
-      events_buffer.group_by{|event|
-                  oci_la_log_group_id = event.get('oci_la_log_group_id')
-                  (oci_la_log_group_id)
-                  }.map {|oci_la_log_group_id, records_per_logGroupId|
-                    lrpes_for_logGroupId[oci_la_log_group_id] = records_per_logGroupId
-                  }
+      # Push any remaining chunks
+      current_chunks.each do | log_group_id, chunk |
+        unless chunk[:events].empty?
+          grouped[log_group_id] << chunk[:events]
+        end
+      end
     rescue => ex
       @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
     end
-    return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId,lrpes_for_logGroupId
+    return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId, grouped
   end
 
   def get_or_parse_logSet(unparsed_logSet, event, record_hash, is_tag_exists)
@@ -327,6 +303,7 @@ class LogGroup
             @@logger.info {"InvalidRecord: #{event.to_s}"}
             @@logger.warn {"Invalid record. 'message' field is not present in the record."}
           end
+          @skipped_last_record = true
           return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_group_id") || !is_valid(event.get("oci_la_log_group_id"))
             invalid_reason = METRICS_INVALID_REASON_LOG_GROUP_ID
@@ -336,6 +313,7 @@ class LogGroup
             else
               @@logger.warn {"Invalid record.'oci_la_log_group_id' must not be empty"}
             end
+            @skipped_last_record = true
             return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_source_name") || !is_valid(event.get("oci_la_log_source_name"))
           invalid_reason = METRICS_INVALID_REASON_LOG_SOURCE_NAME
@@ -345,43 +323,12 @@ class LogGroup
           else
             @@logger.warn {"Invalid record.'oci_la_log_source_name' must not be empty"}
           end
+          @skipped_last_record = true
           return false,invalid_reason
         else
           return true,invalid_reason
         end
     end
-  end
-
-  def flatten(kubernetes_metadata)
-    kubernetes_metadata.each_with_object({}) do |(key, value), hash|
-      hash[key] = value
-      if value.is_a? Hash
-        flatten(value).map do |hash_key, hash_value|
-          hash["#{key}.#{hash_key}"] = hash_value
-        end
-      end
-    end
-  end
-
-  def get_kubernetes_metadata(oci_la_metadata, event)
-    # oci_la_metadata -> Hash
-    # event -> LogStash::Event
-    if oci_la_metadata == nil
-      oci_la_metadata = {}
-    end
-    kubernetes_metadata = flatten(event.get("kubernetes"))
-    kubernetes_metadata.each do |key, value|
-      if @kubernetes_metadata_keys_mapping.has_key?(key)
-          if !is_valid(oci_la_metadata[@kubernetes_metadata_keys_mapping[key]])
-            oci_la_metadata[@kubernetes_metadata_keys_mapping[key]] = json_message_handler(key, value)
-          end
-      end
-    end
-    return oci_la_metadata
-    rescue => ex
-      @@logger.error {"Error occurred while getting kubernetes oci_la_metadata:
-                        error message: #{ex}"}
-      return oci_la_metadata
   end
 
   def json_message_handler(key, message)
@@ -444,4 +391,5 @@ class LogGroup
       return true
     end
   end
+end
 end
