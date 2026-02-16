@@ -109,8 +109,8 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
     end
   end
 
-  context "when dump_zip_file is enabled in config" do
-    describe "#save_zip_to_local" do
+  describe "#save_zip_to_local" do
+    context "when zip_file_location is provided" do
       it "saves to local" do
         oci_la_log_group_id = ENV["OCI_TEST_LOG_GROUP_ID"]
         records_per_logGroupId = [event]
@@ -123,6 +123,24 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
         subject.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
         file_name = oci_la_log_group_id+ "_#{current_s}.zip"
         expect(File.exist?("/tmp/#{file_name}")).to be true
+      end
+    end
+    context "when zip_file_location is not provided" do
+      it "does not save zip file locally" do
+        no_file_location_uploader = described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
+        nil, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx,
+        retry_wait_on_5xx, retry_max_times_on_5xx, logger)
+        
+        oci_la_log_group_id = ENV["OCI_TEST_LOG_GROUP_ID"]
+        records_per_logGroupId = [event]
+
+        logSets_per_logGroupId_map,oci_la_global_metadata = no_file_location_uploader.get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
+        records_per_logSet_map = logSets_per_logGroupId_map[1]
+        zippedstream,number_of_records = no_file_location_uploader.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
+        
+        current_s = Time.now().strftime("%Y%m%dT%H%M%S%9NZ")
+        no_file_location_uploader.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
+        expect(no_file_location_uploader.saved_to_local).to eq(false)
       end
     end
   end
