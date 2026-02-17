@@ -99,7 +99,7 @@ module LogStash
             @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(config: my_config, endpoint: la_endpoint)
             @@logger.info 'loganalytics_client initialized'
           else
-            raise LogStash::ConfigurationError, "Invalid authType: #{@auth_type}, valid inputs are -  InstancePrincipal, ConfigFile, WorkloadIdentity"
+            raise LogStash::ConfigurationError, "Invalid authType: #{@auth_type}, valid inputs are -  InstancePrincipal, ConfigFile"
           end
 
           if is_valid(@proxy_ip) && is_number(@proxy_port)
