@@ -17,8 +17,9 @@ module LogStash
   module Outputs
     module LogAnalytics
       class Uploader
-        # class variable for unit tests
+        # class variables for unit tests
         attr_reader :response_status
+        attr_reader :saved_to_local
         
         MAX_FILES_PER_ZIP = 100
         METRICS_SERVICE_ERROR_REASON_400 = "INVALID_PARAMETER"
@@ -285,6 +286,10 @@ module LogStash
             }
             zippedstream.rewind
             if @dump_zip_file
+              if(!is_valid(@zip_file_location))
+                @@logger.error { "dump_zip_file was enabled but zip_file_location was not provided.
+                                  To save zip to local you have to specify a directory." }
+              end
               save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
             end
             #zippedstream.rewind if records.length > 0  #reposition buffer pointer to the beginning
@@ -302,12 +307,14 @@ module LogStash
             fileLocation = @zip_file_location+fileName
             file = ::File.open(fileLocation, "w")
             file.write(zippedstream.sysread)
+            @saved_to_local = true
             rescue => ex
-                          @@logger.error {"Error occurred while saving zip file.
-                                          oci_la_log_group_id: #{oci_la_log_group_id},
-                                          fileLocation: #{@zip_file_location}
-                                          fileName: #{fileName}
-                                          error message: #{ex}"}
+              @@logger.error {"Error occurred while saving zip file.
+                              oci_la_log_group_id: #{oci_la_log_group_id},
+                              fileLocation: #{@zip_file_location}
+                              fileName: #{fileName}
+                              error message: #{ex}"}
+              @saved_to_local = false
             ensure
               file.close unless file.nil?
           end

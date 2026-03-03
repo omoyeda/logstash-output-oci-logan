@@ -36,6 +36,22 @@ describe LogStash::Outputs::Logan do
     "proxy_ip" => ENV["PROXY_IP"],
     "proxy_port" => ENV["PROXY_PORT"]
   } }
+
+  let(:config_with_domain) { {
+    "namespace" => ENV["OCI_NAMESPACE"] || "namespace",
+    "config_file_location" => ENV["OCI_CONFIG_PATH"] || nil,
+    "profile_name" => ENV["OCI_PROFILE_NAME"] || "default",
+    "dump_zip_file" => true,
+    "zip_file_location" => "/tmp/",
+    "plugin_retry_on_4xx" => true,
+    "retry_wait_on_4xx" => 1,
+    "retry_max_times_on_4xx" => 3,
+    "plugin_retry_on_5xx" => true,
+    "retry_wait_on_5xx" => 1,
+    "retry_max_times_on_5xx" => 3,
+    "collection_source" => "logstash",
+    "oci_domain" => ENV["OCI_DOMAIN"] || nil
+  } }
   
   let(:event) { LogStash::Event.new({
     "message" => "Test Log",
@@ -235,6 +251,15 @@ describe LogStash::Outputs::Logan do
           subject.multi_receive_encoded(illegal_events_and_encoded)
           expect(subject.oci_uploader.response_status).to eq(404)
         end
+      end
+    end
+
+    context "when domain is provided" do
+      it "uploads using domain" do
+        plugin_with_domain = described_class.new(config_with_domain)
+        plugin_with_domain.register
+        plugin_with_domain.multi_receive_encoded(events_and_encoded)
+        expect(plugin_with_domain.oci_uploader.response_status).to eq(200)
       end
     end
   end

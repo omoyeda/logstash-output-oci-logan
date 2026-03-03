@@ -109,6 +109,9 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     if is_valid(@oci_domain) && !@oci_domain.match(/\S.oci.\S/)
       raise LogStash::ConfigurationError, "Invalid oci_domain: #{@oci_domain}, valid fmt: <oci-region>.oci.<oci-domain> | ex: us-ashburn-1.oci.oraclecloud.com"
     end
+    if @dump_zip_file && !is_valid(@zip_file_location)
+      raise LogStash::ConfigurationError, "Invalid zip_file_location: #{@zip_file_location}, zip_file_location must be a valid directory when enabling dump_zip_file."
+    end
   
     initialize_logger()
     @client = LogStash::Outputs::LogAnalytics::Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
