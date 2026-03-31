@@ -5,7 +5,7 @@ require 'logger'
 describe LogStash::Outputs::LogAnalytics::Client do
   # client with config file
   config_file_location = ENV["OCI_CONFIG_PATH"] || nil
-  profile_name = ENV["OCI_PROFILE_NAME"] || nil
+  profile_name = ENV["OCI_PROFILE_NAME"] || DEFAULT
   endpoint = nil
   auth_type = config_file_location.nil? ? "InstancePrincipal" : "ConfigFile"
   oci_domain = nil

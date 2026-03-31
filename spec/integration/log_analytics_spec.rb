@@ -8,7 +8,7 @@ describe LogStash::Outputs::Logan do
   let(:config) { {
     "namespace" => ENV["OCI_NAMESPACE"] || "namespace",
     "config_file_location" => ENV["OCI_CONFIG_PATH"] || nil,
-    "profile_name" => ENV["OCI_PROFILE_NAME"] || "default",
+    "profile_name" => ENV["OCI_PROFILE_NAME"] || "DEFAULT",
     "dump_zip_file" => true,
     "zip_file_location" => "/tmp/",
     "plugin_retry_on_4xx" => true,
