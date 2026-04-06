@@ -5,5 +5,6 @@ lib/logstash/outputs/_logan.rb
 lib/logstash/outputs/__logan.rb
 lib/logstash/outputs/_1logan.rb
 logstash-output-logan-0.1.0.gem
+logstash-output-log_analytics-0.1.0.gem
 Gemfile.lock
 path/
