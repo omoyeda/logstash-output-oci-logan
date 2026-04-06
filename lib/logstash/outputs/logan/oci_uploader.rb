@@ -275,10 +275,11 @@ module LogStash
                     noOfFilesGenerated = noOfFilesGenerated +1
                     if is_valid(oci_la_log_set) then
                       nextEntry = oci_la_log_group_id+ "_#{current_s}" +"_"+ noOfFilesGenerated.to_s + "_logSet=" + oci_la_log_set + ".json"     #oci_la_log_group_id + ".json"
+                      @@logger.debug {"Added entry #{nextEntry} for oci_la_log_set #{oci_la_log_set} into the zip."}
                     else
                       nextEntry = oci_la_log_group_id + "_#{current_s}" +"_"+ noOfFilesGenerated.to_s + ".json"
+                      @@logger.debug {"Added entry #{nextEntry} into the zip."}
                     end
-                    @@logger.debug {"Added entry #{nextEntry} for oci_la_log_set #{oci_la_log_set} into the zip."}
                     zos.put_next_entry(nextEntry)
                     logEventsJsonFinal = LogEventsJson.new(oci_la_global_metadata,lrpes_for_logEvents)
                     zos.write JSON.dump(logEventsJsonFinal.to_hash)
