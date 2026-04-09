@@ -92,46 +92,48 @@ module LogStash
                               opc-request-id: #{headers['opc-request-id']},
                               opc-object-id: #{headers['opc-object-id']}"}
             end
-          rescue OCI::Errors::ServiceError => serviceError
-            error_code = serviceError.status_code
-            case serviceError.status_code
+          rescue OCI::Errors::ServiceError, OCI::Errors::NetworkError => error
+            error_code = error.respond_to?(:status_code) ? error.status_code : error.code
+            request_id = error.request_id
+            case error_code
               when 400
                 error_reason = METRICS_SERVICE_ERROR_REASON_400
-                @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{serviceError.request_id}"}
+                @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{request_id}"}
               when 401
                 error_reason = METRICS_SERVICE_ERROR_REASON_401
                 @@logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
-                                opc-request-id:#{serviceError.request_id}
-                                message: #{serviceError.message}"}
+                                opc-request-id:#{request_id}
+                                message: #{error.message}"}
               when 404
                 error_reason = METRICS_SERVICE_ERROR_REASON_404
                 @@logger.error {"oci upload exception : Error while uploading the payload. Authorization failed for given oci_la_log_group_id against given Tenancy Namespace.
                                 oci_la_log_group_id: #{oci_la_log_group_id}
                                 Namespace: #{@namespace}
-                                opc-request-id: #{serviceError.request_id}
-                                message: #{serviceError.message}"}
+                                opc-request-id:#{request_id}
+                                message: #{error.message}"}
               when 429
                 error_reason = METRICS_SERVICE_ERROR_REASON_429
-                @@logger.error {"oci upload exception : Error while uploading the payload. Too Many Requests - opc-request-id:#{serviceError.request_id}"}
+                @@logger.error {"oci upload exception : Error while uploading the payload. Too Many Requests - opc-request-id:#{request_id}"}
               when 500
                 error_reason = METRICS_SERVICE_ERROR_REASON_500
-                @@logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{serviceError.request_id}"}
+                @@logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{request_id}"}
               when 502
                 error_reason = METRICS_SERVICE_ERROR_REASON_502
-                @@logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{serviceError.request_id}"}
+                @@logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{request_id}"}
               when 503
                 error_reason = METRICS_SERVICE_ERROR_REASON_503
-                @@logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{serviceError.request_id}"}
+                @@logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{request_id}"}
               when 504
                 error_reason = METRICS_SERVICE_ERROR_REASON_504
-                @@logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{serviceError.request_id}"}
+                @@logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{request_id}"}
               when 505
                 error_reason = METRICS_SERVICE_ERROR_REASON_505
-                @@logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{serviceError.request_id}"}
+                @@logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{request_id}"}
               else
                 error_reason = METRICS_SERVICE_ERROR_REASON_UNKNOWN
-                @@logger.error {"oci upload exception : Error while uploading the payload #{serviceError.message}"}
-                raise serviceError
+                @@logger.error {"oci upload exception : Error while uploading the payload #{error.message}"}
+                @@logger.error {"Raising exception. Not retrying."}
+                raise error
             end
             @response_status = error_code
 
