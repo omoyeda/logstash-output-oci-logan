@@ -94,7 +94,7 @@ module LogStash
             end
           rescue OCI::Errors::ServiceError, OCI::Errors::NetworkError => error
             error_code = error.respond_to?(:status_code) ? error.status_code : error.code
-            request_id = error.respond_to?(:request_id) ? error.request_id : 'N/A'
+            request_id = error.request_id
             case error_code
               when 400
                 error_reason = METRICS_SERVICE_ERROR_REASON_400
