@@ -1,6 +1,7 @@
 .vscode
 .bundle
 .ruby-version
+.codex
 lib/logstash/outputs/_logan.rb
 lib/logstash/outputs/__logan.rb
 lib/logstash/outputs/_1logan.rb
