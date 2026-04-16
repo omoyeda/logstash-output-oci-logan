@@ -291,7 +291,7 @@ module LogStash
           begin
             fileName = oci_la_log_group_id+"_"+current_s+'.zip'
             fileLocation = ::File.join(@zip_file_location, fileName)
-            file = ::File.open(fileLocation, "w")
+            file = ::File.open(fileLocation, "wb")
             file.write(zippedstream.sysread)
             @saved_to_local = true
             rescue => ex
