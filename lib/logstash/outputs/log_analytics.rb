@@ -109,8 +109,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     if is_valid(@oci_domain) && !@oci_domain.match(/\S.oci.\S/)
       raise LogStash::ConfigurationError, "Invalid oci_domain: #{@oci_domain}, valid fmt: <oci-region>.oci.<oci-domain> | ex: us-ashburn-1.oci.oraclecloud.com"
     end
-    if @dump_zip_file && !is_valid(@zip_file_location)
-      raise LogStash::ConfigurationError, "Invalid zip_file_location: #{@zip_file_location}, zip_file_location must be a valid directory when enabling dump_zip_file."
+    if @dump_zip_file && !valid_directory_path?(@zip_file_location)
+      raise LogStash::ConfigurationError, "Invalid zip_file_location: #{@zip_file_location}, zip_file_location must be an existing writable directory when enabling dump_zip_file."
     end
   
     initialize_logger()
@@ -217,6 +217,10 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     else
       return true
     end
+  end
+
+  def valid_directory_path?(path)
+    is_valid(path) && ::File.directory?(path) && ::File.writable?(path)
   end
 
   def is_valid_log_rotation(log_rotation)

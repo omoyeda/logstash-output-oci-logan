@@ -46,23 +46,6 @@ module LogStash
           @retry_max_times_on_4xx = retry_max_times_on_4xx
           @retry_wait_on_5xx = retry_wait_on_5xx
           @retry_max_times_on_5xx = retry_max_times_on_5xx
-
-          # retry_strategy_map = {
-          #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(404, 'NotAuthorizedOrNotFound') => true,
-          #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(409, 'IncorrectState') => true,
-          #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(429, 'TooManyRequests') => false,
-          #   OCI::Retry::Functions::ShouldRetryOnError::ErrorCodeTuple.new(501, 'MethodNotImplemented') => false
-          # }
-          # @retry_config_5xx = OCI::Retry::RetryConfig.new(
-          #   base_sleep_time_millis: 1000 * @retry_wait_on_5xx,
-          #   exponential_growth_factor: 1,
-          #   should_retry_exception_proc:
-          #     OCI::Retry::Functions::ShouldRetryOnError.retry_strategy_with_customized_retry_mapping_proc(retry_strategy_map),
-          #   sleep_calc_millis_proc: Proc.new { |retry_config, retry_state| retry_config.base_sleep_time_millis },
-          #   max_attempts: @retry_max_times_on_5xx.nil? || @retry_max_times_on_5xx==-1 ? nil : @retry_max_times_on_5xx,
-          #   max_elapsed_time_millis: 300_000, # 5 minutes
-          #   max_sleep_between_attempts_millis: 10000,
-          # )
         end
         
         # upload zipped stream to oci
@@ -72,7 +55,7 @@ module LogStash
             collection_src_prop = getCollectionSource(@collection_source)
             error_reason = nil
             error_code = nil
-            opts = { payload_type: "ZIP", opc_meta_properties: collection_src_prop, retry_config: @retry_config_5xx}
+            opts = { payload_type: "ZIP", opc_meta_properties: collection_src_prop }
             
             response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
                                             logGroupId=oci_la_log_group_id ,
@@ -307,7 +290,7 @@ module LogStash
         def save_zip_to_local(oci_la_log_group_id, zippedstream, current_s)
           begin
             fileName = oci_la_log_group_id+"_"+current_s+'.zip'
-            fileLocation = @zip_file_location+fileName
+            fileLocation = ::File.join(@zip_file_location, fileName)
             file = ::File.open(fileLocation, "w")
             file.write(zippedstream.sysread)
             @saved_to_local = true

@@ -6,6 +6,7 @@ require "logstash/devutils/rspec/spec_helper"
 require 'logstash/outputs/logan/oci_uploader'
 require "logstash/event"
 require 'logger'
+require 'tmpdir'
 
 describe LogStash::Outputs::LogAnalytics::Uploader do
   namespace = "OCI_NAMESPACE"
@@ -112,17 +113,23 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
   describe "#save_zip_to_local" do
     context "when zip_file_location is provided" do
       it "saves to local", :unit_test do
-        oci_la_log_group_id = "OCI_TEST_LOG_GROUP_ID"
-        records_per_logGroupId = [event]
+        Dir.mktmpdir do |directory|
+          uploader = described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
+            directory, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx,
+            retry_wait_on_5xx, retry_max_times_on_5xx, logger)
 
-        logSets_per_logGroupId_map,oci_la_global_metadata = subject.get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
-        records_per_logSet_map = logSets_per_logGroupId_map[1]
-        zippedstream,number_of_records = subject.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
-        
-        current_s = Time.now().strftime("%Y%m%dT%H%M%S%9NZ")
-        subject.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
-        file_name = oci_la_log_group_id+ "_#{current_s}.zip"
-        expect(File.exist?("/tmp/#{file_name}")).to be true
+          oci_la_log_group_id = "OCI_TEST_LOG_GROUP_ID"
+          records_per_logGroupId = [event]
+
+          logSets_per_logGroupId_map,oci_la_global_metadata = uploader.get_logSets_map_per_logGroupId(oci_la_log_group_id,records_per_logGroupId)
+          records_per_logSet_map = logSets_per_logGroupId_map[1]
+          zippedstream,number_of_records = uploader.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
+          
+          current_s = Time.now().strftime("%Y%m%dT%H%M%S%9NZ")
+          uploader.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
+          file_name = oci_la_log_group_id+ "_#{current_s}.zip"
+          expect(File.exist?(File.join(directory, file_name))).to be true
+        end
       end
     end
     context "when zip_file_location is not provided" do
