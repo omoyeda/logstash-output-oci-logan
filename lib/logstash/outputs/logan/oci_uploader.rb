@@ -50,7 +50,7 @@ module LogStash
         
         # upload zipped stream to oci
         def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream)
-          tries = 0
+          retry_counts = Hash.new(0)
           begin
             collection_src_prop = getCollectionSource(@collection_source)
             error_reason = nil
@@ -122,29 +122,31 @@ module LogStash
 
             # retry only on error codes 4XX
             if error_code.between?(400,499) && error_code != 429 && @plugin_retry_on_4xx
-              if @retry_max_times_on_4xx == -1 || tries < @retry_max_times_on_4xx
-                tries += 1
-                attempt_info = @retry_max_times_on_4xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_4xx} attempts"
+              if @retry_max_times_on_4xx == -1 || retry_counts[error_code] < @retry_max_times_on_4xx
+                retry_counts[error_code] += 1
+                attempts = retry_counts[error_code]
+                attempt_info = @retry_max_times_on_4xx == -1 ? "#{attempts} of UNLIMITED attempts" : "#{attempts} of #{@retry_max_times_on_4xx} attempts"
                 @@logger.warn {"Retrying to upload the payload: #{attempt_info}. Waiting..."}
                 sleep @retry_wait_on_4xx
                 @@logger.info {"Wait time Over. Retrying..."}
                 retry
               else
-                @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
+                @@logger.error {"Failed to upload the payload - status #{error_code}: retried #{retry_counts[error_code]} times"}
               end
             end
 
             # retry only on error codes 5XX
             if error_code.between?(500,599) && @plugin_retry_on_5xx
-              if @retry_max_times_on_5xx == -1 || tries < @retry_max_times_on_5xx
-                tries += 1
-                attempt_info = @retry_max_times_on_5xx == -1 ? "#{tries} of UNLIMITED attempts" : "#{tries} of #{@retry_max_times_on_5xx} attempts"
+              if @retry_max_times_on_5xx == -1 || retry_counts[error_code] < @retry_max_times_on_5xx
+                retry_counts[error_code] += 1
+                attempts = retry_counts[error_code]
+                attempt_info = @retry_max_times_on_5xx == -1 ? "#{attempts} of UNLIMITED attempts" : "#{attempts} of #{@retry_max_times_on_5xx} attempts"
                 @@logger.warn {"Retrying to upload the payload: #{attempt_info}. Waiting..."}
                 sleep @retry_wait_on_5xx
                 @@logger.info {"Wait time Over. Retrying..."}
                 retry
               else
-                @@logger.error {"Failed to upload the payload - : retried #{tries} times"}
+                @@logger.error {"Failed to upload the payload - status #{error_code}: retried #{retry_counts[error_code]} times"}
               end
             end
           rescue => ex

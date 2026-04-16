@@ -151,4 +151,38 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
       end
     end
   end
+
+  describe "#upload_to_oci" do
+    context "when retrying different HTTP status codes" do
+      it "tracks retries independently per status code", :unit_test do
+        uploader = described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
+          zip_file_location, true, true, 0, 2, 0, 2, logger)
+
+        success_response = double("response", status: 200, headers: {
+          "date" => "today",
+          "timecreated" => "now",
+          "opc-request-id" => "opc-req",
+          "opc-object-id" => "opc-obj"
+        })
+
+        errors = [
+          OCI::Errors::ServiceError.new(500, "InternalServerError", "req-1", "boom"),
+          OCI::Errors::ServiceError.new(500, "InternalServerError", "req-2", "boom"),
+          OCI::Errors::ServiceError.new(504, "GatewayTimeout", "req-3", "boom"),
+          success_response
+        ]
+
+        allow(loganalytics_client).to receive(:upload_log_events_file) do
+          result = errors.shift
+          raise result if result.is_a?(Exception)
+          result
+        end
+
+        uploader.upload_to_oci("OCI_TEST_LOG_GROUP_ID", 1, StringIO.new("zip"))
+
+        expect(loganalytics_client).to have_received(:upload_log_events_file).exactly(4).times
+        expect(uploader.response_status).to eq(200)
+      end
+    end
+  end
 end
