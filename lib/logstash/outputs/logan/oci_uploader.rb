@@ -17,10 +17,6 @@ module LogStash
   module Outputs
     module LogAnalytics
       class Uploader
-        # class variables for unit tests
-        attr_reader :response_status
-        attr_reader :saved_to_local
-        
         MAX_FILES_PER_ZIP = 100
         METRICS_SERVICE_ERROR_REASON_400 = "INVALID_PARAMETER"
         METRICS_SERVICE_ERROR_REASON_401 = "AUTHENTICATION_FAILED"
@@ -33,12 +29,12 @@ module LogStash
         METRICS_SERVICE_ERROR_REASON_505 = "HTTP_VERSION_NOT_SUPPORTED"
         METRICS_SERVICE_ERROR_REASON_UNKNOWN = "UNKNOWN_ERROR"
 
-        def initialize(namespace, dump_zip_file, loganalytics_client, collection_source, zip_file_location, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx, retry_wait_on_5xx, retry_max_times_on_5xx, logger)
+        def initialize(namespace, dump_zip_file, client_provider, collection_source, zip_file_location, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx, retry_wait_on_5xx, retry_max_times_on_5xx, logger)
           @namespace = namespace
-          @@logger = logger
+          @logger = logger
           @collection_source = collection_source
           @dump_zip_file = dump_zip_file
-          @@loganalytics_client = loganalytics_client
+          @client_provider = client_provider
           @zip_file_location = zip_file_location
           @plugin_retry_on_4xx = plugin_retry_on_4xx
           @plugin_retry_on_5xx = plugin_retry_on_5xx
@@ -51,23 +47,30 @@ module LogStash
         # upload zipped stream to oci
         def upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream)
           retry_counts = Hash.new(0)
+          result = {
+            log_group_id: oci_la_log_group_id,
+            number_of_records: number_of_records,
+            status: nil,
+            error_reason: nil
+          }
           begin
             collection_src_prop = getCollectionSource(@collection_source)
             error_reason = nil
             error_code = nil
             opts = { payload_type: "ZIP", opc_meta_properties: collection_src_prop }
+            client = @client_provider.call
             
-            response = @@loganalytics_client.upload_log_events_file(namespace_name=@namespace,
+            response = client.upload_log_events_file(namespace_name=@namespace,
                                             logGroupId=oci_la_log_group_id ,
                                             uploadLogEventsFileDetails=zippedstream.string,
                                             opts)
 
-            @response_status = response.status
+            result[:status] = response.status
 
             if !response.nil?  && response.status == 200 then
               headers = response.headers
 
-              @@logger.info {"The payload has been successfully uploaded to logAnalytics -
+              @logger.info {"The payload has been successfully uploaded to logAnalytics -
                               oci_la_log_group_id: #{oci_la_log_group_id},
                               ConsumedRecords: #{number_of_records},
                               Date: #{headers['date']},
@@ -81,44 +84,45 @@ module LogStash
             case error_code
               when 400
                 error_reason = METRICS_SERVICE_ERROR_REASON_400
-                @@logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{request_id}"}
+                @logger.error {"oci upload exception : Error while uploading the payload. Invalid/Incorrect/missing Parameter - opc-request-id:#{request_id}"}
               when 401
                 error_reason = METRICS_SERVICE_ERROR_REASON_401
-                @@logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
+                @logger.error {"oci upload exception : Error while uploading the payload. Not Authenticated.
                                 opc-request-id:#{request_id}
                                 message: #{error.message}"}
               when 404
                 error_reason = METRICS_SERVICE_ERROR_REASON_404
-                @@logger.error {"oci upload exception : Error while uploading the payload. Authorization failed for given oci_la_log_group_id against given Tenancy Namespace.
+                @logger.error {"oci upload exception : Error while uploading the payload. Authorization failed for given oci_la_log_group_id against given Tenancy Namespace.
                                 oci_la_log_group_id: #{oci_la_log_group_id}
                                 Namespace: #{@namespace}
                                 opc-request-id:#{request_id}
                                 message: #{error.message}"}
               when 429
                 error_reason = METRICS_SERVICE_ERROR_REASON_429
-                @@logger.error {"oci upload exception : Error while uploading the payload. Too Many Requests - opc-request-id:#{request_id}"}
+                @logger.error {"oci upload exception : Error while uploading the payload. Too Many Requests - opc-request-id:#{request_id}"}
               when 500
                 error_reason = METRICS_SERVICE_ERROR_REASON_500
-                @@logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{request_id}"}
+                @logger.error {"oci upload exception : Error while uploading the payload. Internal Server Error - opc-request-id:#{request_id}"}
               when 502
                 error_reason = METRICS_SERVICE_ERROR_REASON_502
-                @@logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{request_id}"}
+                @logger.error {"oci upload exception : Error while uploading the payload. Bad Gateway - opc-request-id:#{request_id}"}
               when 503
                 error_reason = METRICS_SERVICE_ERROR_REASON_503
-                @@logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{request_id}"}
+                @logger.error {"oci upload exception : Error while uploading the payload. Service unavailable - opc-request-id:#{request_id}"}
               when 504
                 error_reason = METRICS_SERVICE_ERROR_REASON_504
-                @@logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{request_id}"}
+                @logger.error {"oci upload exception : Error while uploading the payload. Gateway Timeout - opc-request-id:#{request_id}"}
               when 505
                 error_reason = METRICS_SERVICE_ERROR_REASON_505
-                @@logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{request_id}"}
+                @logger.error {"oci upload exception : Error while uploading the payload. HTTP Version Not Supported - opc-request-id:#{request_id}"}
               else
                 error_reason = METRICS_SERVICE_ERROR_REASON_UNKNOWN
-                @@logger.error {"oci upload exception : Error while uploading the payload #{error.message}"}
-                @@logger.error {"Raising exception. Not retrying."}
+                @logger.error {"oci upload exception : Error while uploading the payload #{error.message}"}
+                @logger.error {"Raising exception. Not retrying."}
                 raise error
             end
-            @response_status = error_code
+            result[:status] = error_code
+            result[:error_reason] = error_reason
 
             # retry only on error codes 4XX
             if error_code.between?(400,499) && error_code != 429 && @plugin_retry_on_4xx
@@ -126,12 +130,12 @@ module LogStash
                 retry_counts[error_code] += 1
                 attempts = retry_counts[error_code]
                 attempt_info = @retry_max_times_on_4xx == -1 ? "#{attempts} of UNLIMITED attempts" : "#{attempts} of #{@retry_max_times_on_4xx} attempts"
-                @@logger.warn {"Retrying to upload the payload: #{attempt_info}. Waiting..."}
+                @logger.warn {"Retrying to upload the payload: #{attempt_info}. Waiting..."}
                 sleep @retry_wait_on_4xx
-                @@logger.info {"Wait time Over. Retrying..."}
+                @logger.info {"Wait time Over. Retrying..."}
                 retry
               else
-                @@logger.error {"Failed to upload the payload - status #{error_code}: retried #{retry_counts[error_code]} times"}
+                @logger.error {"Failed to upload the payload - status #{error_code}: retried #{retry_counts[error_code]} times"}
               end
             end
 
@@ -141,18 +145,20 @@ module LogStash
                 retry_counts[error_code] += 1
                 attempts = retry_counts[error_code]
                 attempt_info = @retry_max_times_on_5xx == -1 ? "#{attempts} of UNLIMITED attempts" : "#{attempts} of #{@retry_max_times_on_5xx} attempts"
-                @@logger.warn {"Retrying to upload the payload: #{attempt_info}. Waiting..."}
+                @logger.warn {"Retrying to upload the payload: #{attempt_info}. Waiting..."}
                 sleep @retry_wait_on_5xx
-                @@logger.info {"Wait time Over. Retrying..."}
+                @logger.info {"Wait time Over. Retrying..."}
                 retry
               else
-                @@logger.error {"Failed to upload the payload - status #{error_code}: retried #{retry_counts[error_code]} times"}
+                @logger.error {"Failed to upload the payload - status #{error_code}: retried #{retry_counts[error_code]} times"}
               end
             end
           rescue => ex
             error_reason = ex
-            @@logger.error {"oci upload exception : Error while uploading the payload. #{ex}"}
+            result[:error_reason] = error_reason
+            @logger.error {"oci upload exception : Error while uploading the payload. #{ex}"}
           end
+          result
         end
 
         def show_dropped_messages(incoming_records_per_tag, invalid_records_per_tag, tag_metrics_set)
@@ -160,18 +166,19 @@ module LogStash
             dropped_messages = (invalid_records_per_tag.has_key?(key)) ? invalid_records_per_tag[key].to_i : 0
             valid_messages = value.to_i - dropped_messages
             if dropped_messages > 0
-              @@logger.info {"Messages: #{value.to_i} \t Valid: #{valid_messages} \t Invalid: #{dropped_messages} \t tag:#{key}"}
+              @logger.info {"Messages: #{value.to_i} \t Valid: #{valid_messages} \t Invalid: #{dropped_messages} \t tag:#{key}"}
             end
           end
         end
 
         def generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
+          upload_results = []
           if lrpes_for_logGroupId != nil && lrpes_for_logGroupId.length > 0
             lrpes_for_logGroupId.each do |oci_la_log_group_id, chunks|
               chunks.each do |records_per_logGroupId|
                 begin
                   tags = tags_per_logGroupId.key(oci_la_log_group_id)
-                  @@logger.info {"Generating payload with #{records_per_logGroupId.length}  records for oci_la_log_group_id: #{oci_la_log_group_id}"}
+                  @logger.info {"Generating payload with #{records_per_logGroupId.length}  records for oci_la_log_group_id: #{oci_la_log_group_id}"}
                   zippedstream = nil
                   oci_la_log_set = nil
                   logSets_per_logGroupId_map = Hash.new
@@ -188,7 +195,7 @@ module LogStash
                             zippedstream,number_of_records = get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
                             if zippedstream != nil
                               zippedstream.rewind #reposition buffer pointer to the beginning
-                              upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream)
+                              upload_results << upload_to_oci(oci_la_log_group_id, number_of_records, zippedstream)
                             end
                         end
                       }.real.round(3)
@@ -199,6 +206,7 @@ module LogStash
               end
             end
           end
+          upload_results
         end
 
         # Each oci_la_log_set will correspond to a separate file in the zip
@@ -235,7 +243,7 @@ module LogStash
             logSets_per_logGroupId_map[file_count] = records_per_logSet_map
             return logSets_per_logGroupId_map,oci_la_global_metadata
             rescue => exc
-                    @@logger.error {"Error in mapping records to oci_la_log_set.
+                    @logger.error {"Error in mapping records to oci_la_log_set.
                                     oci_la_log_group_id: #{oci_la_log_group_id},
                                     error message:#{exc}"}
         end
@@ -262,10 +270,10 @@ module LogStash
                     noOfFilesGenerated = noOfFilesGenerated +1
                     if is_valid(oci_la_log_set) then
                       nextEntry = oci_la_log_group_id+ "_#{current_s}" +"_"+ noOfFilesGenerated.to_s + "_logSet=" + oci_la_log_set + ".json"     #oci_la_log_group_id + ".json"
-                      @@logger.debug {"Added entry #{nextEntry} for oci_la_log_set #{oci_la_log_set} into the zip."}
+                      @logger.debug {"Added entry #{nextEntry} for oci_la_log_set #{oci_la_log_set} into the zip."}
                     else
                       nextEntry = oci_la_log_group_id + "_#{current_s}" +"_"+ noOfFilesGenerated.to_s + ".json"
-                      @@logger.debug {"Added entry #{nextEntry} into the zip."}
+                      @logger.debug {"Added entry #{nextEntry} into the zip."}
                     end
                     zos.put_next_entry(nextEntry)
                     logEventsJsonFinal = LogEventsJson.new(oci_la_global_metadata,lrpes_for_logEvents)
@@ -275,14 +283,14 @@ module LogStash
             zippedstream.rewind
             if @dump_zip_file
               if(!is_valid(@zip_file_location))
-                @@logger.error { "dump_zip_file was enabled but zip_file_location was not provided.
+                @logger.error { "dump_zip_file was enabled but zip_file_location was not provided.
                                   To save zip to local you have to specify a directory." }
               end
               save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
             end
             #zippedstream.rewind if records.length > 0  #reposition buffer pointer to the beginning
             rescue => exc
-              @@logger.error {"Error in generating payload.
+              @logger.error {"Error in generating payload.
                               oci_la_log_group_id: #{oci_la_log_group_id},
                               error message:#{exc}"}
             end
@@ -295,14 +303,14 @@ module LogStash
             fileLocation = ::File.join(@zip_file_location, fileName)
             file = ::File.open(fileLocation, "wb")
             file.write(zippedstream.sysread)
-            @saved_to_local = true
+            true
             rescue => ex
-              @@logger.error {"Error occurred while saving zip file.
+              @logger.error {"Error occurred while saving zip file.
                               oci_la_log_group_id: #{oci_la_log_group_id},
                               fileLocation: #{@zip_file_location}
                               fileName: #{fileName}
                               error message: #{ex}"}
-              @saved_to_local = false
+              false
             ensure
               file.close unless file.nil?
           end

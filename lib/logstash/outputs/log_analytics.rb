@@ -27,13 +27,12 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   attr_reader :oci_client
 
   config_name "log_analytics"
-  concurrency :single
+  concurrency :shared
   default :codec, "line"
 
-  @@logger = nil
-  @loganalytics_client = nil
-  # @@prometheusMetrics = nil
-  @@logger_config_errors = []
+  DEFAULT_LOG_LEVEL = 'info'.freeze
+  DEFAULT_LOG_SIZE = 1 * 1024 * 1024
+  DEFAULT_NUMBER_OF_LOGS = 10
 
   # ---------------------------------------------------------------
   # Parameters
@@ -114,20 +113,18 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     end
   
     initialize_logger()
-    @client = LogStash::Outputs::LogAnalytics::Client.new(@config_file_location, @profile_name, @endpoint, @auth_type, @oci_domain, @proxy_ip, @proxy_port, @proxy_username, @proxy_password, @@logger)
-    @client.initialize_loganalytics_client()
-    @loganalytics_client = @client.loganalytics_client
+    client_for_current_thread
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
     if !is_mandatory_fields_valid
-      @@logger.error {"Error in config file : invalid #{invalid_field_name}"}
+      @logger.error {"Error in config file : invalid #{invalid_field_name}"}
       raise LogStash::ConfigurationError, "Error in config file : invalid #{invalid_field_name}"
     end
 
-    @oci_uploader = LogStash::Outputs::LogAnalytics::Uploader.new(@namespace, @dump_zip_file, @loganalytics_client, @collection_source,
+    @oci_uploader = LogStash::Outputs::LogAnalytics::Uploader.new(@namespace, @dump_zip_file, method(:client_for_current_thread), @collection_source,
                                  @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,
-                                 @retry_wait_on_5xx, @retry_max_times_on_5xx, @@logger)
-    @log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@@logger)
+                                 @retry_wait_on_5xx, @retry_max_times_on_5xx, @logger)
+    @log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@logger)
   end
 
   # Default function for the plugin
@@ -144,17 +141,17 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   # logger
   def initialize_logger()
     begin
+      @logger_config_errors = []
       filename = nil
       is_default_log_location = false
       if is_valid(@plugin_log_location)
           filename = @plugin_log_location[-1] == '/' ? @plugin_log_location : @plugin_log_location +'/'
       else
-          # @@logger = log
-          @@logger = Logger.new(STDOUT)
+          @logger = Logger.new(STDOUT)
           return
       end
       if !is_valid_log_level(@plugin_log_level)
-          @plugin_log_level = @@default_log_level
+          @plugin_log_level = DEFAULT_LOG_LEVEL
       end
       oci_logstash_output_plugin_log = nil
       if is_default_log_location
@@ -168,46 +165,45 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
           # When customer provided valid log_file_count and log_file_size.
           # logger will rotate with max log_file_count with each file having max log_file_size.
           # Older logs purged automatically.
-          @@logger = Logger.new(oci_logstash_output_plugin_log, @plugin_log_file_count, @@validated_log_size)
+          @logger = Logger.new(oci_logstash_output_plugin_log, @plugin_log_file_count, @validated_log_size)
           logger_config = 'USER_CONFIG'
       elsif is_valid_log_rotation(@plugin_log_rotation)
           # When customer provided only log_rotation.
           # logger will create a new log based on log_rotation (new file everyday if the rotation is daily).
           # This will create too many logs over a period of time as log purging is not done.
-          @@logger = Logger.new(oci_logstash_output_plugin_log, @plugin_log_rotation)
+          @logger = Logger.new(oci_logstash_output_plugin_log, @plugin_log_rotation)
           logger_config = 'FALLBACK_CONFIG'
       else
           # When customer provided invalid log config, default config is considered.
           # logger will rotate with max default log_file_count with each file having max default log_file_size.
           # Older logs purged automatically.
-          @@logger = Logger.new(oci_logstash_output_plugin_log, @@default_number_of_logs, @@default_log_size)
+          @logger = Logger.new(oci_logstash_output_plugin_log, DEFAULT_NUMBER_OF_LOGS, DEFAULT_LOG_SIZE)
           logger_config = 'DEFAULT_CONFIG'
       end
 
       logger_set_level(@plugin_log_level)
-      @@logger.info {"Initializing oci-logging-analytics plugin"}
+      @logger.info {"Initializing oci-logging-analytics plugin"}
       if is_default_log_location
-          @@logger.info {"plugin_log_location is not specified. oci-logging-analytics.log will be generated under directory from where logstash is executed."}
+          @logger.info {"plugin_log_location is not specified. oci-logging-analytics.log will be generated under directory from where logstash is executed."}
       end
 
       case logger_config
           when 'USER_CONFIG'
-          @@logger.info {"Logger for oci-logging-analytics.log is initialized with config values log size: #{@plugin_log_file_size}, number of logs: #{@plugin_log_file_count}"}
+          @logger.info {"Logger for oci-logging-analytics.log is initialized with config values log size: #{@plugin_log_file_size}, number of logs: #{@plugin_log_file_count}"}
           when 'FALLBACK_CONFIG'
-          @@logger.info {"Logger for oci-logging-analytics.log is initialized with log rotation: #{@plugin_log_rotation}"}
+          @logger.info {"Logger for oci-logging-analytics.log is initialized with log rotation: #{@plugin_log_rotation}"}
           when 'DEFAULT_CONFIG'
-          @@logger.info {"Logger for oci-logging-analytics.log is initialized with default config values log size: #{@@default_log_size}, number of logs: #{@@default_number_of_logs}"}
+          @logger.info {"Logger for oci-logging-analytics.log is initialized with default config values log size: #{DEFAULT_LOG_SIZE}, number of logs: #{DEFAULT_NUMBER_OF_LOGS}"}
       end
-      if @@logger_config_errors.length > 0
-          @@logger_config_errors. each {|logger_config_error|
-          @@logger.warn {"#{logger_config_error}"}
+      if @logger_config_errors.length > 0
+          @logger_config_errors.each {|logger_config_error|
+          @logger.warn {"#{logger_config_error}"}
           }
       end
     rescue => ex
-      # @@logger = log
-      @@logger = Logger.new(STDOUT)
-      @@logger.error {"Error while initializing logger:#{ex.inspect}"}
-      @@logger.info {"Redirecting oci log analytics logs to STDOUT"}
+      @logger = Logger.new(STDOUT)
+      @logger.error {"Error while initializing logger:#{ex.inspect}"}
+      @logger.info {"Redirecting oci log analytics logs to STDOUT"}
     end
   end
 
@@ -235,7 +231,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
         when "monthly"
           return true
         else
-          @@logger_config_error << "Only 'daily'/'weekly'/'monthly' are supported for 'plugin_log_rotation'."
+          @logger_config_errors << "Only 'daily'/'weekly'/'monthly' are supported for 'plugin_log_rotation'."
           return false
       end
   end
@@ -266,17 +262,17 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     # DEBUG < INFO < WARN < ERROR < FATAL < UNKNOWN
     case @plugin_log_level.upcase
       when "DEBUG"
-        @@logger.level = Logger::DEBUG
+        @logger.level = Logger::DEBUG
       when "INFO"
-        @@logger.level = Logger::INFO
+        @logger.level = Logger::INFO
       when "WARN"
-        @@logger.level = Logger::WARN
+        @logger.level = Logger::WARN
       when "ERROR"
-        @@logger.level = Logger::ERROR
+        @logger.level = Logger::ERROR
       when "FATAL"
-        @@logger.level = Logger::FATAL
+        @logger.level = Logger::FATAL
       when "UNKNOWN"
-        @@logger.level = Logger::UNKNOWN
+        @logger.level = Logger::UNKNOWN
     end
   end
 
@@ -294,10 +290,10 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
         when /([0-9]+)g/i
           log_size = $~[1].to_i * (1024 ** 3)
         else
-          @@logger_config_errors << "plugin_log_file_size must be greater than 1KB."
+          @logger_config_errors << "plugin_log_file_size must be greater than 1KB."
           return false
       end
-      @@validated_log_size = log_size
+      @validated_log_size = log_size
       return true
     else
       return false
@@ -306,7 +302,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
   def is_valid_number_of_logs(number_of_logs)
     if !is_number(number_of_logs) || number_of_logs < 1
-      @@logger_config_errors << "plugin_log_file_count must be greater than zero"
+      @logger_config_errors << "plugin_log_file_count must be greater than zero"
       return false
     end
     return true
@@ -324,5 +320,32 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
         return true,nil
       end
     end
+  end
+
+  private
+
+  def client_for_current_thread
+    Thread.current[thread_client_key] ||= build_loganalytics_client
+  end
+
+  def build_loganalytics_client
+    client_wrapper = LogStash::Outputs::LogAnalytics::Client.new(
+      @config_file_location,
+      @profile_name,
+      @endpoint,
+      @auth_type,
+      @oci_domain,
+      @proxy_ip,
+      @proxy_port,
+      @proxy_username,
+      @proxy_password,
+      @logger
+    )
+    client_wrapper.initialize_loganalytics_client()
+    client_wrapper.loganalytics_client
+  end
+
+  def thread_client_key
+    @thread_client_key ||= :"logan_oci_client_#{object_id}"
   end
 end # class LogStash::Outputs::Logan

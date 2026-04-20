@@ -40,7 +40,9 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
         "oci_la_global_metadata" => {"Access Control List" => "test:test"}
       }) }
 
-  subject { described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
+  let(:client_provider) { -> { loganalytics_client } }
+
+  subject { described_class.new(namespace, dump_zip_file, client_provider, collection_source,
         zip_file_location, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx,
         retry_wait_on_5xx, retry_max_times_on_5xx, logger) }
 
@@ -49,6 +51,15 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
       it "does not fail while generating payload", :unit_test do
         tags_per_logGroupId = { "OCI_TEST_LOG_GROUP_ID" => "" }
         lrpes_for_logGroupId = { "OCI_TEST_LOG_GROUP_ID" => [[event]] }
+        success_response = double("response", status: 200, headers: {
+          "date" => "today",
+          "timecreated" => "now",
+          "opc-request-id" => "opc-req",
+          "opc-object-id" => "opc-obj"
+        })
+
+        allow(loganalytics_client).to receive(:upload_log_events_file).and_return(success_response)
+
         expect { subject.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId) }.not_to raise_error
       end
     end
@@ -114,7 +125,7 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
     context "when zip_file_location is provided" do
       it "saves to local", :unit_test do
         Dir.mktmpdir do |directory|
-          uploader = described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
+          uploader = described_class.new(namespace, dump_zip_file, client_provider, collection_source,
             directory, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx,
             retry_wait_on_5xx, retry_max_times_on_5xx, logger)
 
@@ -126,7 +137,7 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
           zippedstream,number_of_records = uploader.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
           
           current_s = Time.now().strftime("%Y%m%dT%H%M%S%9NZ")
-          uploader.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
+          expect(uploader.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)).to eq(true)
           file_name = oci_la_log_group_id+ "_#{current_s}.zip"
           expect(File.exist?(File.join(directory, file_name))).to be true
         end
@@ -134,7 +145,7 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
     end
     context "when zip_file_location is not provided" do
       it "does not save zip file locally", :unit_test do
-        no_file_location_uploader = described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
+        no_file_location_uploader = described_class.new(namespace, dump_zip_file, client_provider, collection_source,
         nil, plugin_retry_on_4xx, plugin_retry_on_5xx, retry_wait_on_4xx, retry_max_times_on_4xx,
         retry_wait_on_5xx, retry_max_times_on_5xx, logger)
         
@@ -146,8 +157,7 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
         zippedstream,number_of_records = no_file_location_uploader.get_zipped_stream(oci_la_log_group_id,oci_la_global_metadata,records_per_logSet_map)
         
         current_s = Time.now().strftime("%Y%m%dT%H%M%S%9NZ")
-        no_file_location_uploader.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)
-        expect(no_file_location_uploader.saved_to_local).to eq(false)
+        expect(no_file_location_uploader.save_zip_to_local(oci_la_log_group_id,zippedstream,current_s)).to eq(false)
       end
     end
   end
@@ -155,7 +165,7 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
   describe "#upload_to_oci" do
     context "when retrying different HTTP status codes" do
       it "tracks retries independently per status code", :unit_test do
-        uploader = described_class.new(namespace, dump_zip_file, loganalytics_client, collection_source,
+        uploader = described_class.new(namespace, dump_zip_file, client_provider, collection_source,
           zip_file_location, true, true, 0, 2, 0, 2, logger)
 
         success_response = double("response", status: 200, headers: {
@@ -178,10 +188,10 @@ describe LogStash::Outputs::LogAnalytics::Uploader do
           result
         end
 
-        uploader.upload_to_oci("OCI_TEST_LOG_GROUP_ID", 1, StringIO.new("zip"))
+        result = uploader.upload_to_oci("OCI_TEST_LOG_GROUP_ID", 1, StringIO.new("zip"))
 
         expect(loganalytics_client).to have_received(:upload_log_events_file).exactly(4).times
-        expect(uploader.response_status).to eq(200)
+        expect(result[:status]).to eq(200)
       end
     end
   end

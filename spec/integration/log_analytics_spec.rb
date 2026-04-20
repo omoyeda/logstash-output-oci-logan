@@ -158,6 +158,10 @@ describe LogStash::Outputs::Logan do
   let(:log_output) { StringIO.new }
   let(:logger) { Logger.new(log_output) }
 
+  def statuses_for(results)
+    results.map { |result| result[:status] }
+  end
+
   subject { described_class.new(config) }
 
   it 'registers without errors' do
@@ -176,35 +180,29 @@ describe LogStash::Outputs::Logan do
       end
 
       it "uploads basic event", :integration_test do
-        expect { subject.multi_receive_encoded(events_and_encoded) }.to_not raise_error
-        expect(subject.oci_uploader.response_status).to eq(200)
+        expect(statuses_for(subject.multi_receive_encoded(events_and_encoded))).to eq([200])
       end
 
       it "uploads event with valid metadata", :integration_test do
-        expect { subject.multi_receive_encoded(events_and_encoded_mdata) }.to_not raise_error
-        expect(subject.oci_uploader.response_status).to eq(200)
+        expect(statuses_for(subject.multi_receive_encoded(events_and_encoded_mdata))).to eq([200])
       end
 
       it "uploads event with valid logset", :integration_test do
-        expect { subject.multi_receive_encoded(events_and_encoded_logset) }.to_not raise_error
-        expect(subject.oci_uploader.response_status).to eq(200)
+        expect(statuses_for(subject.multi_receive_encoded(events_and_encoded_logset))).to eq([200])
       end
 
       it "uploads event with regex and logset", :integration_test do
-        expect { subject.multi_receive_encoded(regex_and_encoded) }.to_not raise_error
-        expect(subject.oci_uploader.response_status).to eq(200)
+        expect(statuses_for(subject.multi_receive_encoded(regex_and_encoded))).to eq([200])
       end
 
       it "uploads event with valid tag", :integration_test do
-        expect { subject.multi_receive_encoded(events_and_encoded_tag) }.to_not raise_error
-        expect(subject.oci_uploader.response_status).to eq(200)
+        expect(statuses_for(subject.multi_receive_encoded(events_and_encoded_tag))).to eq([200])
       end
     end
 
     context "when receiving invalid events" do
       before do
         subject.register
-        described_class.class_variable_set(:@@logger, logger)
       end
 
       after do
@@ -213,12 +211,9 @@ describe LogStash::Outputs::Logan do
 
       context "when invalid record comes in the middle" do
         it "skips only the invalid record", :integration_test do
-          subject.multi_receive_encoded(events_and_encoded)
-          expect(subject.oci_uploader.response_status).to eq(200)
-          subject.multi_receive_encoded(illegal_events_and_encoded)
-          expect(subject.oci_uploader.response_status).to eq(404)
-          subject.multi_receive_encoded(events_and_encoded_tag)
-          expect(subject.oci_uploader.response_status).to eq(200)
+          expect(statuses_for(subject.multi_receive_encoded(events_and_encoded))).to eq([200])
+          expect(statuses_for(subject.multi_receive_encoded(illegal_events_and_encoded))).to eq([404])
+          expect(statuses_for(subject.multi_receive_encoded(events_and_encoded_tag))).to eq([200])
         end
       end
     end
@@ -234,8 +229,7 @@ describe LogStash::Outputs::Logan do
 
       context "with non-existent log group id" do
         it "triggers 404 NotAuthorizedOrNotFound", :integration_test do
-          subject.multi_receive_encoded(illegal_events_and_encoded)
-          expect(subject.oci_uploader.response_status).to eq(404)
+          expect(statuses_for(subject.multi_receive_encoded(illegal_events_and_encoded))).to eq([404])
         end
       end
     end
@@ -244,8 +238,7 @@ describe LogStash::Outputs::Logan do
       it "uploads using domain", :integration_test do
         plugin_with_domain = described_class.new(config_with_domain)
         plugin_with_domain.register
-        plugin_with_domain.multi_receive_encoded(events_and_encoded)
-        expect(plugin_with_domain.oci_uploader.response_status).to eq(200)
+        expect(statuses_for(plugin_with_domain.multi_receive_encoded(events_and_encoded))).to eq([200])
       end
     end
   end

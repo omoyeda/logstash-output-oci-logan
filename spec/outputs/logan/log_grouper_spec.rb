@@ -311,16 +311,16 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
     end
     context "when records are missing required fields" do
       it "skips the record with missing message", :unit_test do
-        subject.group_by_logGroupId(inv_events_and_encoded)
-        expect(subject.skipped_last_record).to eq(true)
+        output = subject.group_by_logGroupId(inv_events_and_encoded)
+        expect(output[5]).to eq({})
       end
       it "skips the record with missing log group id", :unit_test do
-        subject.group_by_logGroupId(inv_events_and_encoded2)
-        expect(subject.skipped_last_record).to eq(true)
+        output = subject.group_by_logGroupId(inv_events_and_encoded2)
+        expect(output[5]).to eq({})
       end
       it "skips the record with missing log source", :unit_test do
-        subject.group_by_logGroupId(inv_events_and_encoded3)
-        expect(subject.skipped_last_record).to eq(true)
+        output = subject.group_by_logGroupId(inv_events_and_encoded3)
+        expect(output[5]).to eq({})
       end
     end
   end

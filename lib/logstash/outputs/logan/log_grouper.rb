@@ -9,9 +9,6 @@ require 'thread'
 
 module LogStash::Outputs::LogAnalytics
 class LogGroup
-  # this keeps track of skipped records for unit tests
-  attr_reader :skipped_last_record
-
   METRICS_INVALID_REASON_MESSAGE = "MISSING_FIELD_MESSAGE"
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
@@ -19,7 +16,7 @@ class LogGroup
   MAX_PAYLOAD_SIZE_BYTES = 2 * 1024 * 1024 # 2 MB
   
   def initialize(logger)
-    @@logger = logger
+    @logger = logger
   end
 
   def group_by_logGroupId(events_encoded)
@@ -43,8 +40,6 @@ class LogGroup
       grouped = Hash.new { |h, k| h[k] = [] } # log_group_id => [chunks]
       current_chunks = Hash.new { |h, k| h[k] = { size: 0, events: [] } }
 
-      @skipped_last_record = false
-      
       events_encoded.each do |event, encoded|
         time = event.get('@timestamp').time.to_f
         metricsLabels = MetricsLabels.new
@@ -143,12 +138,11 @@ class LogGroup
                     invalid_records_per_tag[event.get("tag")] += 1
                   else
                     invalid_records_per_tag[event.get("tag")] = 1
-                    @@logger.warn {"'message' field is empty or encoded, Skipping records associated with tag : #{event.get("tag")}."}
+                    @logger.warn {"'message' field is empty or encoded, Skipping records associated with tag : #{event.get("tag")}."}
                   end
                 else
-                  @@logger.warn {"'message' field is empty or encoded, Skipping record."}
+                  @logger.warn {"'message' field is empty or encoded, Skipping record."}
                 end
-                @skipped_last_record = true
                 next
             end
 
@@ -181,7 +175,7 @@ class LogGroup
                 else
                   isTimezoneExist = timezone_exist? timezoneIdentifier
                   unless isTimezoneExist
-                    @@logger.warn { "Invalid timezone '#{timezoneIdentifier}', using default UTC." }
+                    @logger.warn { "Invalid timezone '#{timezoneIdentifier}', using default UTC." }
                     event.set("oci_la_timezone", "UTC")
                   end
 
@@ -199,14 +193,14 @@ class LogGroup
 
             # Start a new chunk if needed
             if current_chunks[log_group_id][:size] + event_size > MAX_PAYLOAD_SIZE_BYTES
-              @@logger.debug{"Current chunk is full, starting a new one"}
+              @logger.debug{"Current chunk is full, starting a new one"}
               # finalize current chunk
               grouped[log_group_id] << current_chunks[log_group_id][:events]
               # start a new chunk
               current_chunks[log_group_id] = {size: 0, events: []}
             end
 
-            @@logger.debug{"Current chunk size: #{current_chunks[log_group_id][:size]}"}
+            @logger.debug{"Current chunk size: #{current_chunks[log_group_id][:size]}"}
 
             # Add event to current chunk
             current_chunks[log_group_id][:events] << event
@@ -234,7 +228,7 @@ class LogGroup
             end
           end
         else
-          @@logger.trace {"Record is nil, ignoring the record"}
+          @logger.trace {"Record is nil, ignoring the record"}
         end
       end
 
@@ -245,7 +239,7 @@ class LogGroup
         end
       end
     rescue => ex
-      @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
+      @logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
     end
     return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId, grouped
   end
@@ -278,9 +272,9 @@ class LogGroup
         else
           oci_la_log_set = nil
           if is_tag_exists
-              @@logger.error {"Error occurred while parsing oci_la_log_set : #{unparsed_logSet} with oci_la_log_set_ext_regex : #{event.get("oci_la_log_set_ext_regex")}. Default oci_la_log_set will be assigned to all the records with tag : #{event.get("tag")}."}
+              @logger.error {"Error occurred while parsing oci_la_log_set : #{unparsed_logSet} with oci_la_log_set_ext_regex : #{event.get("oci_la_log_set_ext_regex")}. Default oci_la_log_set will be assigned to all the records with tag : #{event.get("tag")}."}
           else
-              @@logger.error {"Error occurred while parsing oci_la_log_set : #{unparsed_logSet} with oci_la_log_set_ext_regex : #{event.get("oci_la_log_set_ext_regex")}. Default oci_la_log_set will be assigned."}
+              @logger.error {"Error occurred while parsing oci_la_log_set : #{unparsed_logSet} with oci_la_log_set_ext_regex : #{event.get("oci_la_log_set_ext_regex")}. Default oci_la_log_set will be assigned."}
           end
         end
     else
@@ -288,7 +282,7 @@ class LogGroup
     end
     return oci_la_log_set
     rescue => ex
-          @@logger.error {"Error occurred while parsing oci_la_log_set : #{ex}. Default oci_la_log_set will be assigned."}
+          @logger.error {"Error occurred while parsing oci_la_log_set : #{ex}. Default oci_la_log_set will be assigned."}
           return nil
   end
 
@@ -298,32 +292,29 @@ class LogGroup
         if !record_hash.has_key?("message")
           invalid_reason = METRICS_INVALID_REASON_MESSAGE
           if record_hash.has_key?("tag")
-            @@logger.warn {"Invalid records associated with tag : #{event.get("tag")}. 'message' field is not present in the record."}
+            @logger.warn {"Invalid records associated with tag : #{event.get("tag")}. 'message' field is not present in the record."}
           else
-            @@logger.info {"InvalidRecord: #{event.to_s}"}
-            @@logger.warn {"Invalid record. 'message' field is not present in the record."}
+            @logger.info {"InvalidRecord: #{event.to_s}"}
+            @logger.warn {"Invalid record. 'message' field is not present in the record."}
           end
-          @skipped_last_record = true
           return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_group_id") || !is_valid(event.get("oci_la_log_group_id"))
             invalid_reason = METRICS_INVALID_REASON_LOG_GROUP_ID
             if record_hash.has_key?("tag")
-              @@logger.warn {"Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_group_id' must not be empty.
+              @logger.warn {"Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_group_id' must not be empty.
                               Skipping all the records associated with the tag"}
             else
-              @@logger.warn {"Invalid record.'oci_la_log_group_id' must not be empty"}
+              @logger.warn {"Invalid record.'oci_la_log_group_id' must not be empty"}
             end
-            @skipped_last_record = true
             return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_source_name") || !is_valid(event.get("oci_la_log_source_name"))
           invalid_reason = METRICS_INVALID_REASON_LOG_SOURCE_NAME
           if record_hash.has_key?("tag")
-            @@logger.warn {"Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_source_name' must not be empty.
+            @logger.warn {"Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_source_name' must not be empty.
                             Skipping all the records associated with the tag"}
           else
-            @@logger.warn {"Invalid record.'oci_la_log_source_name' must not be empty"}
+            @logger.warn {"Invalid record.'oci_la_log_source_name' must not be empty"}
           end
-          @skipped_last_record = true
           return false,invalid_reason
         else
           return true,invalid_reason
@@ -344,7 +335,7 @@ class LogGroup
           end
           return message
       rescue => ex
-          @@logger.error {"Error occured while generating json for
+          @logger.error {"Error occured while generating json for
                               field: #{key}
                               exception : #{ex}"}
           return nil
@@ -368,7 +359,7 @@ class LogGroup
             end
           end
           if invalid_keys.length > 0
-            @@logger.warn {"Skipping the following oci_la_metadata/oci_la_global_metadata keys #{invalid_keys.compact.reject(&:empty?).join(',')} as the corresponding values are in invalid format."}
+            @logger.warn {"Skipping the following oci_la_metadata/oci_la_global_metadata keys #{invalid_keys.compact.reject(&:empty?).join(',')} as the corresponding values are in invalid format."}
           end
           if valid_metadata.length > 0
             return valid_metadata
@@ -376,7 +367,7 @@ class LogGroup
             return nil
           end
       else
-          @@logger.warn {"Ignoring 'oci_la_metadata'/'oci_la_global_metadata' provided in the record_transformer filter as only key-value pairs are supported."}
+          @logger.warn {"Ignoring 'oci_la_metadata'/'oci_la_global_metadata' provided in the record_transformer filter as only key-value pairs are supported."}
           return nil
       end
     else
