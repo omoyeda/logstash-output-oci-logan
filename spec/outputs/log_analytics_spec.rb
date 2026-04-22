@@ -89,4 +89,22 @@ describe LogStash::Outputs::Logan do
       expect(uploads.size.times.map { uploads.pop }.uniq.length).to eq(2)
     end
   end
+
+  describe "#do_close" do
+    let(:config) {{"namespace" => "example"}}
+
+    it "closes cleanly with the inherited Logstash logger", :unit_test do
+      plugin = described_class.new(config)
+
+      allow(plugin).to receive(:build_loganalytics_client) do
+        double("client").tap do |client|
+          allow(client).to receive(:upload_log_events_file)
+        end
+      end
+
+      plugin.register
+
+      expect { plugin.do_close }.not_to raise_error
+    end
+  end
 end

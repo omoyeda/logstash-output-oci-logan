@@ -105,9 +105,7 @@ module LogStash
           end
 
           rescue => ex
-            @logger.error {"Error occurred while initializing LogAnalytics Client:
-                                authType: #{@auth_type},
-                                errorMessage: #{ex}"}
+            @logger.error("Error occurred while initializing LogAnalytics Client:\n                                authType: #{@auth_type},\n                                errorMessage: #{ex}")
         end
 
         def is_valid(field)
