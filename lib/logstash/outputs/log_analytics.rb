@@ -22,6 +22,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   require 'logstash/outputs/logan/oci_uploader'
   require 'logstash/outputs/logan/log_grouper'
 
+  VALID_AUTH_TYPES = %w[InstancePrincipal ConfigFile].freeze
+
   attr_reader :oci_uploader
   attr_reader :oci_client
 
@@ -108,6 +110,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     end
   
     initialize_logger()
+    validate_auth_type!
     client_for_current_thread
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
@@ -172,6 +175,16 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
   private
 
+  def effective_auth_type
+    is_valid(@config_file_location) ? 'ConfigFile' : @auth_type
+  end
+
+  def validate_auth_type!
+    return if VALID_AUTH_TYPES.include?(effective_auth_type)
+
+    raise LogStash::ConfigurationError, "Invalid authType: #{@auth_type}, valid inputs are -  InstancePrincipal, ConfigFile"
+  end
+
   def client_for_current_thread
     Thread.current[thread_client_key] ||= build_loganalytics_client
   end
@@ -181,7 +194,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       @config_file_location,
       @profile_name,
       @endpoint,
-      @auth_type,
+      effective_auth_type,
       @oci_domain,
       @proxy_ip,
       @proxy_port,

@@ -49,10 +49,6 @@ module LogStash
 
         # This function authenticates to a client so it can later be used to send Logs to OCI.
         def initialize_loganalytics_client()
-          if is_valid(@config_file_location)
-              @auth_type = "ConfigFile"
-          end
-
           case @auth_type
           when "InstancePrincipal"
             instance_principals_signer = nil
@@ -104,8 +100,9 @@ module LogStash
               end
           end
 
-          rescue => ex
-            @logger.error("Error occurred while initializing LogAnalytics Client:\n                                authType: #{@auth_type},\n                                errorMessage: #{ex}")
+        rescue => ex
+          @logger.error("Error occurred while initializing LogAnalytics Client:\n                                authType: #{@auth_type},\n                                errorMessage: #{ex}")
+          raise
         end
 
         def is_valid(field)

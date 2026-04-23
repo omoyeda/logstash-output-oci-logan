@@ -30,6 +30,33 @@ describe LogStash::Outputs::Logan do
           plugin_fail.register
         }.to raise_error(LogStash::ConfigurationError)
       end
+
+      let(:invalid_config4) {{"namespace" => "example", "auth_type" => "BadAuthType"}}
+      it "fails when auth_type is invalid", :unit_test do
+        plugin_fail = described_class.new(invalid_config4)
+        expect {
+          plugin_fail.register
+        }.to raise_error(LogStash::ConfigurationError, /Invalid authType/)
+      end
+
+      let(:invalid_config5) do
+        {
+          "namespace" => "example",
+          "auth_type" => "ConfigFile",
+          "config_file_location" => "/tmp/missing-oci-config",
+          "profile_name" => "DEFAULT"
+        }
+      end
+      it "fails during register when client initialization fails", :unit_test do
+        plugin_fail = described_class.new(invalid_config5)
+
+        allow(OCI::ConfigFileLoader).to receive(:load_config)
+          .and_raise(Errno::ENOENT, "No such file or directory")
+
+        expect {
+          plugin_fail.register
+        }.to raise_error(Errno::ENOENT)
+      end
     end
   end
 
