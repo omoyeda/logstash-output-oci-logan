@@ -12,6 +12,7 @@ class LogGroup
   METRICS_INVALID_REASON_MESSAGE = "MISSING_FIELD_MESSAGE"
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
+  METRICS_INVALID_REASON_PAYLOAD_TOO_LARGE = "EXCEEDED_MAX_PAYLOAD_SIZE"
 
   MAX_PAYLOAD_SIZE_BYTES = 2 * 1024 * 1024 # 2 MB
   
@@ -191,11 +192,24 @@ class LogGroup
 
             event_size = event.to_json.bytesize
 
+            if event_size > MAX_PAYLOAD_SIZE_BYTES
+              metricsLabels.invalid_reason = METRICS_INVALID_REASON_PAYLOAD_TOO_LARGE
+              if is_tag_exists
+                invalid_records_per_tag[event.get("tag")] = invalid_records_per_tag.fetch(event.get("tag"), 0) + 1
+                @logger.warn("Skipping oversized record for tag : #{event.get("tag")}. Event size #{event_size} exceeds MAX_PAYLOAD_SIZE_BYTES #{MAX_PAYLOAD_SIZE_BYTES}.")
+              else
+                @logger.warn("Skipping oversized record. Event size #{event_size} exceeds MAX_PAYLOAD_SIZE_BYTES #{MAX_PAYLOAD_SIZE_BYTES}.")
+              end
+              next
+            end
+
             # Start a new chunk if needed
             if current_chunks[log_group_id][:size] + event_size > MAX_PAYLOAD_SIZE_BYTES
               @logger.debug("Current chunk is full, starting a new one")
               # finalize current chunk
-              grouped[log_group_id] << current_chunks[log_group_id][:events]
+              unless current_chunks[log_group_id][:events].empty?
+                grouped[log_group_id] << current_chunks[log_group_id][:events]
+              end
               # start a new chunk
               current_chunks[log_group_id] = {size: 0, events: []}
             end

@@ -47,6 +47,19 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
   let(:logpath_tag_encoded) { "Log Path test log" }
   let(:logpath_tag_and_encoded) { { logpath_tag_event => logpath_tag_encoded } }
 
+  let(:oversized_tagged_event) do
+    LogStash::Event.new({
+      "message" => "a" * (described_class::MAX_PAYLOAD_SIZE_BYTES + 1024),
+      "oci_la_entity_id" => "OCI_TEST_ENTITY_ID",
+      "oci_la_log_source_name" => "Linux Syslog Logs",
+      "oci_la_log_group_id" => "OCI_TEST_LOG_GROUP_ID",
+      "oci_la_log_set" => "log_set_unit_test_logs",
+      "tag" => "oversized_tag"
+    })
+  end
+  let(:oversized_tagged_encoded) { "oversized event" }
+  let(:oversized_tagged_and_encoded) { { oversized_tagged_event => oversized_tagged_encoded } }
+
   let(:empty_logpath_event) { empty_logpath_event = LogStash::Event.new({
         "message" => "Log Path test log",
         "oci_la_entity_id" => "OCI_TEST_ENTITY_ID",
@@ -320,6 +333,15 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
       end
       it "skips the record with missing log source", :unit_test do
         output = subject.group_by_logGroupId(inv_events_and_encoded3)
+        expect(output[5]).to eq({})
+      end
+    end
+
+    context "when a single event exceeds the maximum payload size" do
+      it "drops the event without creating an empty chunk", :unit_test do
+        output = subject.group_by_logGroupId(oversized_tagged_and_encoded)
+
+        expect(output[1]).to eq({"oversized_tag" => 1})
         expect(output[5]).to eq({})
       end
     end
