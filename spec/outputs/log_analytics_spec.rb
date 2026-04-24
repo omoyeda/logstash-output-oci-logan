@@ -151,5 +151,33 @@ describe LogStash::Outputs::Logan do
 
       expect { plugin.do_close }.not_to raise_error
     end
+
+    it "clears cached clients from the register thread and worker threads", :unit_test do
+      plugin = described_class.new(config)
+      key = plugin.send(:thread_client_key)
+      created_clients = Queue.new
+
+      allow(plugin).to receive(:build_loganalytics_client) do
+        Object.new.tap { |client| created_clients << client }
+      end
+
+      plugin.register
+      register_thread_client = created_clients.pop
+      expect(Thread.current.thread_variable_get(key)).to be(register_thread_client)
+
+      worker_thread = Thread.new do
+        plugin.send(:client_for_current_thread)
+        Thread.current.thread_variable_get(key)
+      end
+      worker_thread_client = worker_thread.value
+
+      expect(worker_thread_client).not_to be_nil
+      expect(worker_thread_client).not_to be(register_thread_client)
+
+      plugin.do_close
+
+      expect(Thread.current.thread_variable_get(key)).to be_nil
+      expect(worker_thread.thread_variable_get(key)).to be_nil
+    end
   end
 end

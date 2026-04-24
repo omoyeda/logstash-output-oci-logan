@@ -1,6 +1,7 @@
 # encoding: utf-8
 require "logstash/outputs/base"
 require "logstash/namespace"
+require "thread"
 
 # require_relative 'logan/log_grouper'
 require_relative '../enums/source'
@@ -137,6 +138,11 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     @oci_uploader.generate_payload(tags_per_logGroupId, lrpes_for_logGroupId)
   end
 
+  def do_close
+    clear_cached_clients
+    super if defined?(super)
+  end
+
   # logger
   def initialize_logger()
     if logger_settings_provided?
@@ -187,7 +193,12 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   end
 
   def client_for_current_thread
-    Thread.current[thread_client_key] ||= build_loganalytics_client
+    cached_client = Thread.current.thread_variable_get(thread_client_key)
+    return cached_client if cached_client
+
+    client = build_loganalytics_client
+    register_client_thread(Thread.current)
+    Thread.current.thread_variable_set(thread_client_key, client)
   end
 
   def build_loganalytics_client
@@ -209,6 +220,30 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
   def thread_client_key
     @thread_client_key ||= :"logan_oci_client_#{object_id}"
+  end
+
+  def register_client_thread(thread)
+    client_threads_mutex.synchronize do
+      @client_threads ||= []
+      @client_threads << thread unless @client_threads.include?(thread)
+    end
+  end
+
+  def clear_cached_clients
+    client_threads_mutex.synchronize do
+      Array(@client_threads).each do |thread|
+        begin
+          thread.thread_variable_set(thread_client_key, nil)
+        rescue ThreadError
+          next
+        end
+      end
+      @client_threads = []
+    end
+  end
+
+  def client_threads_mutex
+    @client_threads_mutex ||= Mutex.new
   end
 
   def logger_settings_provided?
