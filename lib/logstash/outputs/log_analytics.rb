@@ -111,13 +111,14 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   
     initialize_logger()
     validate_auth_type!
-    client_for_current_thread
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
     if !is_mandatory_fields_valid
       @logger.error("Error in config file : invalid #{invalid_field_name}")
       raise LogStash::ConfigurationError, "Error in config file : invalid #{invalid_field_name}"
     end
+
+    client_for_current_thread
 
     @oci_uploader = LogStash::Outputs::LogAnalytics::Uploader.new(@namespace, @dump_zip_file, method(:client_for_current_thread), @collection_source,
                                  @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,

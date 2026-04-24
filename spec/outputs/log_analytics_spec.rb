@@ -57,6 +57,24 @@ describe LogStash::Outputs::Logan do
           plugin_fail.register
         }.to raise_error(Errno::ENOENT)
       end
+
+      let(:invalid_config6) do
+        {
+          "namespace" => "example",
+          "auth_type" => "ConfigFile",
+          "config_file_location" => nil,
+          "profile_name" => "DEFAULT"
+        }
+      end
+      it "fails before client initialization when ConfigFile is missing a config path", :unit_test do
+        plugin_fail = described_class.new(invalid_config6)
+
+        expect(plugin_fail).not_to receive(:build_loganalytics_client)
+
+        expect {
+          plugin_fail.register
+        }.to raise_error(LogStash::ConfigurationError, /invalid config_file_location/)
+      end
     end
   end
 
