@@ -403,6 +403,16 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
     end
   end
 
+  describe "#timezone_exist?" do
+    it "returns true for a valid timezone identifier", :unit_test do
+      expect(subject.timezone_exist?("UTC")).to be true
+    end
+
+    it "returns false for an invalid timezone identifier", :unit_test do
+      expect(subject.timezone_exist?("Not/A_Timezone")).to be false
+    end
+  end
+
   describe "#get_valid_metadata" do
     context "when extracting valid metadata" do
       it "only accepts Hash metadata", :unit_test do

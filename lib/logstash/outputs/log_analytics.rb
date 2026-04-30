@@ -2,6 +2,7 @@
 require "logstash/outputs/base"
 require "logstash/namespace"
 require "thread"
+require "logger"
 
 # require_relative 'logan/log_grouper'
 require_relative '../enums/source'
@@ -24,6 +25,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
   require 'logstash/outputs/logan/log_grouper'
 
   VALID_AUTH_TYPES = %w[InstancePrincipal ConfigFile].freeze
+  VALID_LOG_LEVELS = %w[DEBUG INFO WARN ERROR FATAL UNKNOWN].freeze
 
   attr_reader :oci_uploader
   attr_reader :oci_client
@@ -115,7 +117,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
     is_mandatory_fields_valid,invalid_field_name =  mandatory_field_validator
     if !is_mandatory_fields_valid
-      @logger.error("Error in config file : invalid #{invalid_field_name}")
+      @plugin_logger.error("Error in config file : invalid #{invalid_field_name}")
       raise LogStash::ConfigurationError, "Error in config file : invalid #{invalid_field_name}"
     end
 
@@ -123,8 +125,8 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
     @oci_uploader = LogStash::Outputs::LogAnalytics::Uploader.new(@namespace, @dump_zip_file, method(:client_for_current_thread), @collection_source,
                                  @zip_file_location, @plugin_retry_on_4xx, @plugin_retry_on_5xx, @retry_wait_on_4xx, @retry_max_times_on_4xx,
-                                 @retry_wait_on_5xx, @retry_max_times_on_5xx, @logger)
-    @log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@logger)
+                                 @retry_wait_on_5xx, @retry_max_times_on_5xx, @plugin_logger)
+    @log_grouper = LogStash::Outputs::LogAnalytics::LogGroup.new(@plugin_logger)
   end
 
   # Default function for the plugin
@@ -145,8 +147,16 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
 
   # logger
   def initialize_logger()
-    if logger_settings_provided?
-      @logger.warn("plugin_log_location, plugin_log_level, plugin_log_rotation, plugin_log_file_size, and plugin_log_file_count are ignored; using the Logstash plugin logger instead.")
+    $stdout.sync = true if $stdout.respond_to?(:sync=)
+    @plugin_logger = Logger.new($stdout)
+    @plugin_logger.level = effective_log_level
+
+    if ignored_logger_settings_provided?
+      @plugin_logger.warn("plugin_log_location, plugin_log_rotation, plugin_log_file_size, and plugin_log_file_count are ignored; using the plugin STDOUT logger instead.")
+    end
+
+    if is_valid(@plugin_log_level) && !valid_log_level?(@plugin_log_level)
+      @plugin_logger.warn("Invalid plugin_log_level '#{@plugin_log_level}', defaulting to INFO.")
     end
   end
 
@@ -212,7 +222,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
       @proxy_port,
       @proxy_username,
       @proxy_password,
-      @logger
+      @plugin_logger
     )
     client_wrapper.initialize_loganalytics_client()
     client_wrapper.loganalytics_client
@@ -246,12 +256,21 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     @client_threads_mutex ||= Mutex.new
   end
 
-  def logger_settings_provided?
+  def ignored_logger_settings_provided?
     [
       @plugin_log_location,
-      @plugin_log_level,
       @plugin_log_rotation,
       @plugin_log_file_size
     ].any? { |value| is_valid(value) } || @plugin_log_file_count != 10
+  end
+
+  def valid_log_level?(level)
+    VALID_LOG_LEVELS.include?(level.to_s.upcase)
+  end
+
+  def effective_log_level
+    return Logger::INFO unless valid_log_level?(@plugin_log_level)
+
+    Logger.const_get(@plugin_log_level.upcase)
   end
 end # class LogStash::Outputs::Logan

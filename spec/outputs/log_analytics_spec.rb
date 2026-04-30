@@ -138,7 +138,7 @@ describe LogStash::Outputs::Logan do
   describe "#do_close" do
     let(:config) {{"namespace" => "example"}}
 
-    it "closes cleanly with the inherited Logstash logger", :unit_test do
+    it "closes cleanly with the dedicated STDOUT logger", :unit_test do
       plugin = described_class.new(config)
 
       allow(plugin).to receive(:build_loganalytics_client) do
@@ -178,6 +178,24 @@ describe LogStash::Outputs::Logan do
 
       expect(Thread.current.thread_variable_get(key)).to be_nil
       expect(worker_thread.thread_variable_get(key)).to be_nil
+    end
+  end
+
+  describe "#initialize_logger" do
+    it "uses a dedicated STDOUT logger with the configured log level", :unit_test do
+      plugin = described_class.new({"namespace" => "example", "plugin_log_level" => "debug"})
+
+      allow(plugin).to receive(:build_loganalytics_client) do
+        double("client").tap do |client|
+          allow(client).to receive(:upload_log_events_file)
+        end
+      end
+
+      plugin.register
+
+      logger = plugin.instance_variable_get(:@plugin_logger)
+      expect(logger).to be_a(Logger)
+      expect(logger.level).to eq(Logger::DEBUG)
     end
   end
 end
