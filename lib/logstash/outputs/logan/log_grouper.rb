@@ -4,6 +4,7 @@
 require_relative '../../metrics/metricsLabels'
 require 'oci/log_analytics/log_analytics'
 require 'json'
+require 'tzinfo'
 
 require 'thread'
 
@@ -248,6 +249,15 @@ class LogGroup
       @@logger.error {"Error occurred while grouping records by oci_la_log_group_id:#{ex.inspect}"}
     end
     return incoming_records_per_tag,invalid_records_per_tag,tag_metrics_set,logGroup_labels_set,tags_per_logGroupId, grouped
+  end
+
+  def timezone_exist?(tz)
+    begin
+      TZInfo::Timezone.get(tz)
+      return true
+    rescue TZInfo::InvalidTimezoneIdentifier
+      return false
+    end
   end
 
   def get_or_parse_logSet(unparsed_logSet, event, record_hash, is_tag_exists)
