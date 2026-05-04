@@ -150,6 +150,7 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     $stdout.sync = true if $stdout.respond_to?(:sync=)
     @plugin_logger = Logger.new($stdout)
     @plugin_logger.level = effective_log_level
+    @plugin_logger.formatter = method(:format_log_message)
 
     if ignored_logger_settings_provided?
       @plugin_logger.warn("plugin_log_location, plugin_log_rotation, plugin_log_file_size, and plugin_log_file_count are ignored; using the plugin STDOUT logger instead.")
@@ -272,5 +273,13 @@ class LogStash::Outputs::Logan < LogStash::Outputs::Base
     return Logger::INFO unless valid_log_level?(@plugin_log_level)
 
     Logger.const_get(@plugin_log_level.upcase)
+  end
+
+  def format_log_message(severity, datetime, progname, message)
+    formatted_time = datetime.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    thread_label = "thread-#{Thread.current.object_id}"
+    progname_segment = progname ? " #{progname}" : ""
+
+    "#{formatted_time} #{severity} [#{thread_label}]#{progname_segment}: #{String(message)}\n"
   end
 end # class LogStash::Outputs::Logan

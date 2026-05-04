@@ -197,5 +197,37 @@ describe LogStash::Outputs::Logan do
       expect(logger).to be_a(Logger)
       expect(logger.level).to eq(Logger::DEBUG)
     end
+
+    it "includes the current thread id in console log output", :unit_test do
+      plugin = described_class.new({"namespace" => "example"})
+      output = StringIO.new
+      logger = nil
+
+      allow(Logger).to receive(:new).and_wrap_original do |original, target, *args|
+        created_logger = original.call(target, *args)
+        if target.equal?($stdout)
+          created_logger.reopen(output)
+          logger = created_logger
+        end
+        created_logger
+      end
+
+      allow(plugin).to receive(:build_loganalytics_client) do
+        double("client").tap do |client|
+          allow(client).to receive(:upload_log_events_file)
+        end
+      end
+
+      plugin.register
+
+      worker_thread_id = nil
+      Thread.new do
+        worker_thread_id = Thread.current.object_id
+        logger.info("thread-aware log line")
+      end.join
+
+      expect(output.string).to include("[thread-#{worker_thread_id}]")
+      expect(output.string).to include("thread-aware log line")
+    end
   end
 end
