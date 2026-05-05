@@ -173,6 +173,30 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
   let(:mult_and_encoded2) { { gid1_event => gid1_encoded, gid2_event => gid2_encoded, gid1_event_alt => gid1_encoded_alt, gid2_event_alt => gid2_encoded_alt } }
   let(:mult_and_encoded3) { { gid1_event => gid1_encoded, gid2_event => gid2_encoded, gid1_event_inv => gid1_encoded_inv, gid2_event_inv => gid2_encoded_inv } }
 
+  let(:timezone_tagged_event) { LogStash::Event.new({
+        "message" => "Uploader test log with timezone",
+        "oci_la_entity_id" => "OCI_TEST_ENTITY_ID",
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => "OCI_TEST_LOG_GROUP_ID",
+        "oci_la_log_set" => "log_set_unit_test_logs",
+        "oci_la_timezone" => "Europe/Dublin",
+        "tag" => "shared_tag"
+  })}
+  let(:timezone_free_tagged_event) { LogStash::Event.new({
+        "message" => "Uploader test log without timezone",
+        "oci_la_entity_id" => "OCI_TEST_ENTITY_ID",
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => "OCI_TEST_LOG_GROUP_ID",
+        "oci_la_log_set" => "log_set_unit_test_logs",
+        "tag" => "shared_tag"
+  })}
+  let(:timezone_tagged_and_encoded) do
+    {
+      timezone_tagged_event => "Uploader test log with timezone",
+      timezone_free_tagged_event => "Uploader test log without timezone"
+    }
+  end
+
   # invalid records with missing required fields
   let(:inv_event) { LogStash::Event.new({
     "message" => "",
@@ -293,6 +317,14 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
       it "returns grouped events with parsed log set", :unit_test do
         output = subject.group_by_logGroupId(regex_and_encoded)
         expect(output[5]["OCI_TEST_LOG_GROUP_ID"][0][0].get("oci_la_log_set")).to eq(expect_output9)
+      end
+
+      it "does not reuse timezone across events sharing the same tag", :unit_test do
+        output = subject.group_by_logGroupId(timezone_tagged_and_encoded)
+        grouped_events = output[5]["OCI_TEST_LOG_GROUP_ID"][0]
+
+        expect(grouped_events[0].get("oci_la_timezone")).to eq("Europe/Dublin")
+        expect(grouped_events[1].get("oci_la_timezone")).to be_nil
       end
     end
     context "when providing optional fields" do
