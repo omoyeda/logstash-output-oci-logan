@@ -39,8 +39,6 @@ class LogGroup
       tags_per_logGroupId = Hash.new
       tag_logSet_map = Hash.new
       tag_metadata_map = Hash.new
-      timezoneValuesByTag = Hash.new
-
       grouped = Hash.new { |h, k| h[k] = [] } # log_group_id => [chunks]
       current_chunks = Hash.new { |h, k| h[k] = { size: 0, events: [] } }
 
@@ -173,24 +171,17 @@ class LogGroup
                 tags_per_logGroupId[event.get("oci_la_log_group_id")] = event.get("tag")
               end
             end
-            # validating the timezone field
-            if !timezoneValuesByTag.has_key?(event.get("tag"))
-              begin
-                timezoneIdentifier = event.get("oci_la_timezone")
-                unless is_valid(timezoneIdentifier)
-                  event.set("oci_la_timezone", nil)
-                else
-                  isTimezoneExist = timezone_exist? timezoneIdentifier
-                  unless isTimezoneExist
-                    @@logger.warn { "Invalid timezone '#{timezoneIdentifier}', using default UTC." }
-                    event.set("oci_la_timezone", "UTC")
-                  end
-
-                end
-                timezoneValuesByTag[event.get("tag")] = event.get("oci_la_timezone")
-              end
+            # validating the timezone field per event to avoid inheriting one input's
+            # timezone configuration across other events that happen to share a tag.
+            timezoneIdentifier = event.get("oci_la_timezone")
+            unless is_valid(timezoneIdentifier)
+              event.set("oci_la_timezone", nil)
             else
-              event.set("oci_la_timezone", timezoneValuesByTag[event.get("tag")])
+              isTimezoneExist = timezone_exist? timezoneIdentifier
+              unless isTimezoneExist
+                @@logger.warn { "Invalid timezone '#{timezoneIdentifier}', using default UTC." }
+                event.set("oci_la_timezone", "UTC")
+              end
             end
             # ---- chunk ----
             log_group_id = event.get("oci_la_log_group_id")
