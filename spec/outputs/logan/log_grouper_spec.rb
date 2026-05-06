@@ -389,7 +389,7 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
         })
 
         expect(warning_messages.count { |message|
-          message == "Invalid record.'oci_la_log_source_name' must not be empty. This record will be skipped and will not be added to the payload."
+          message == "Invalid record.'oci_la_log_source_name' must not be empty. Records with missing 'oci_la_log_source_name' will be skipped and will not be added to the payload."
         }).to eq(1)
       end
     end
