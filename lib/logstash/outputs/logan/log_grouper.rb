@@ -4,6 +4,7 @@
 require_relative '../../metrics/metricsLabels'
 require 'oci/log_analytics/log_analytics'
 require 'json'
+require 'set'
 require 'tzinfo'
 
 require 'thread'
@@ -19,6 +20,7 @@ class LogGroup
   
   def initialize(logger)
     @logger = logger
+    @warned_validation_failures = Set.new
   end
 
   def group_by_logGroupId(events_encoded)
@@ -307,32 +309,67 @@ class LogGroup
         if !record_hash.has_key?("message")
           invalid_reason = METRICS_INVALID_REASON_MESSAGE
           if record_hash.has_key?("tag")
-            @logger.warn("Invalid records associated with tag : #{event.get("tag")}. 'message' field is not present in the record.")
+            log_validation_warning_once(record_hash, event, invalid_reason) do
+              @logger.warn("Invalid records associated with tag : #{event.get("tag")}. 'message' field is not present in the record. These records will be skipped and will not be added to the payload.")
+            end
           else
             @logger.info("InvalidRecord: #{event.to_s}")
-            @logger.warn("Invalid record. 'message' field is not present in the record.")
+            log_validation_warning_once(record_hash, event, invalid_reason) do
+              @logger.warn("Invalid record. 'message' field is not present in the record. This record will be skipped and will not be added to the payload.")
+            end
           end
           return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_group_id") || !is_valid(event.get("oci_la_log_group_id"))
             invalid_reason = METRICS_INVALID_REASON_LOG_GROUP_ID
             if record_hash.has_key?("tag")
-              @logger.warn("Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_group_id' must not be empty.\n                              Skipping all the records associated with the tag")
+              log_validation_warning_once(record_hash, event, invalid_reason) do
+                @logger.warn("Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_group_id' must not be empty.\n                              All records associated with this tag will be skipped and will not be added to the payload.")
+              end
             else
-              @logger.warn("Invalid record.'oci_la_log_group_id' must not be empty")
+              log_validation_warning_once(record_hash, event, invalid_reason) do
+                @logger.warn("Invalid record.'oci_la_log_group_id' must not be empty. Records with missing 'oci_la_log_group_id' will be skipped and will not be added to the payload.")
+              end
             end
             return false,invalid_reason
         elsif !record_hash.has_key?("oci_la_log_source_name") || !is_valid(event.get("oci_la_log_source_name"))
           invalid_reason = METRICS_INVALID_REASON_LOG_SOURCE_NAME
-          if record_hash.has_key?("tag")
-            @logger.warn("Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_source_name' must not be empty.\n                            Skipping all the records associated with the tag")
-          else
-            @logger.warn("Invalid record.'oci_la_log_source_name' must not be empty")
-          end
+            if record_hash.has_key?("tag")
+              log_validation_warning_once(record_hash, event, invalid_reason) do
+                @logger.warn("Invalid records associated with tag : #{event.get("tag")}.'oci_la_log_source_name' must not be empty.\n                            All records associated with this tag will be skipped and will not be added to the payload.")
+              end
+            else
+              log_validation_warning_once(record_hash, event, invalid_reason) do
+                @logger.warn("Invalid record.'oci_la_log_source_name' must not be empty. Records with missing 'oci_la_log_source_name' will be skipped and will not be added to the payload.")
+              end
+            end
           return false,invalid_reason
         else
           return true,invalid_reason
         end
     end
+  end
+
+  def log_validation_warning_once(record_hash, event, invalid_reason)
+    warning_key = validation_warning_key(record_hash, event, invalid_reason)
+    return if @warned_validation_failures.include?(warning_key)
+
+    @warned_validation_failures.add(warning_key)
+    yield
+  end
+
+  def validation_warning_key(record_hash, event, invalid_reason)
+    context = {}
+
+    record_hash.keys.sort.each do |key|
+      next unless key == "tag" || key == "worker_id" || key.start_with?("oci_la_")
+      value = event.get(key)
+      next if value.nil?
+      next if value.respond_to?(:empty?) && value.empty?
+
+      context[key] = value
+    end
+
+    [invalid_reason, context]
   end
 
   def json_message_handler(key, message)

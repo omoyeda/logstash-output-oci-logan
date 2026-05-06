@@ -4,7 +4,10 @@ require "logstash/event"
 require 'logger'
 
 describe LogStash::Outputs::LogAnalytics::LogGroup do
-  let(:logger) { Logger.new(STDOUT) }
+  let(:logger) do
+    double("logger", info: nil, warn: nil, debug: nil, error: nil, trace: nil)
+  end
+  let(:warning_messages) { [] }
 
   # ---- inputs ----
   let(:minimal_field_event) { minimal_field_event = LogStash::Event.new({
@@ -287,6 +290,12 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
 
   subject { described_class.new(logger) }
 
+  before do
+    allow(logger).to receive(:warn) do |message|
+      warning_messages << message
+    end
+  end
+
   describe "#group_by_logGroupId" do
     context "when grouping by log group id" do
       it "does not fail while grouping with group_by_logGroupId", :unit_test do
@@ -366,6 +375,43 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
       it "skips the record with missing log source", :unit_test do
         output = subject.group_by_logGroupId(inv_events_and_encoded3)
         expect(output[5]).to eq({})
+      end
+
+      it "logs the missing log source warning once per validation context", :unit_test do
+        invalid_event_first = LogStash::Event.new({
+          "message" => "Invalid test log one",
+          "oci_la_entity_id" => "OCI_TEST_ENTITY_ID",
+          "oci_la_log_source_name" => "",
+          "oci_la_log_group_id" => "OCI_TEST_LOG_GROUP_ID",
+          "oci_la_log_path" => "/var/log/messages"
+        })
+        invalid_event_second = LogStash::Event.new({
+          "message" => "Invalid test log two",
+          "oci_la_entity_id" => "OCI_TEST_ENTITY_ID",
+          "oci_la_log_source_name" => "",
+          "oci_la_log_group_id" => "OCI_TEST_LOG_GROUP_ID",
+          "oci_la_log_path" => "/var/log/messages"
+        })
+
+        subject.group_by_logGroupId({
+          invalid_event_first => "Invalid test log one",
+          invalid_event_second => "Invalid test log two"
+        })
+        subject.group_by_logGroupId({
+          invalid_event_first => "Invalid test log one"
+        })
+
+        expect(warning_messages.count { |message|
+          message == "Invalid record.'oci_la_log_source_name' must not be empty. Records with missing 'oci_la_log_source_name' will be skipped and will not be added to the payload."
+        }).to eq(1)
+      end
+
+      it "returns the updated missing log group id warning text", :unit_test do
+        subject.group_by_logGroupId(inv_events_and_encoded2)
+
+        expect(warning_messages).to include(
+          "Invalid record.'oci_la_log_group_id' must not be empty. Records with missing 'oci_la_log_group_id' will be skipped and will not be added to the payload."
+        )
       end
     end
 
