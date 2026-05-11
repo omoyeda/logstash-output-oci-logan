@@ -181,7 +181,9 @@ class LogGroup
             else
               isTimezoneExist = timezone_exist? timezoneIdentifier
               unless isTimezoneExist
-                @@logger.warn { "Invalid timezone '#{timezoneIdentifier}', using default UTC." }
+                log_validation_warning_once(record_hash, event, "INVALID_OCI_LA_TIMEZONE") do
+                  @@logger.warn { "Invalid timezone '#{timezoneIdentifier}', using default UTC." }
+                end
                 event.set("oci_la_timezone", "UTC")
               end
             end
