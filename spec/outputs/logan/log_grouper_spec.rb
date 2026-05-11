@@ -212,6 +212,28 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
       timezone_free_tagged_event => "Uploader test log without timezone"
     }
   end
+  let(:invalid_timezone_event) { LogStash::Event.new({
+        "message" => "Uploader test log with invalid timezone",
+        "oci_la_entity_id" => "OCI_TEST_ENTITY_ID",
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => "OCI_TEST_LOG_GROUP_ID",
+        "oci_la_log_set" => "log_set_unit_test_logs",
+        "oci_la_timezone" => "Invalid/Timezone"
+  })}
+  let(:invalid_timezone_event_second) { LogStash::Event.new({
+        "message" => "Uploader test log with another invalid timezone",
+        "oci_la_entity_id" => "OCI_TEST_ENTITY_ID",
+        "oci_la_log_source_name" => "Linux Syslog Logs",
+        "oci_la_log_group_id" => "OCI_TEST_LOG_GROUP_ID",
+        "oci_la_log_set" => "log_set_unit_test_logs",
+        "oci_la_timezone" => "Invalid/Timezone"
+  })}
+  let(:invalid_timezone_and_encoded) do
+    {
+      invalid_timezone_event => "Uploader test log with invalid timezone",
+      invalid_timezone_event_second => "Uploader test log with another invalid timezone"
+    }
+  end
 
   # invalid records with missing required fields
   let(:inv_event) { LogStash::Event.new({
@@ -347,6 +369,20 @@ describe LogStash::Outputs::LogAnalytics::LogGroup do
 
         expect(grouped_events[0].get("oci_la_timezone")).to eq("Europe/Dublin")
         expect(grouped_events[1].get("oci_la_timezone")).to be_nil
+      end
+
+      it "logs an invalid timezone warning once per validation context and defaults to UTC", :unit_test do
+        output = subject.group_by_logGroupId(invalid_timezone_and_encoded)
+        subject.group_by_logGroupId({
+          invalid_timezone_event => "Uploader test log with invalid timezone"
+        })
+        grouped_events = output[5]["OCI_TEST_LOG_GROUP_ID"][0]
+
+        expect(grouped_events[0].get("oci_la_timezone")).to eq("UTC")
+        expect(grouped_events[1].get("oci_la_timezone")).to eq("UTC")
+        expect(warning_messages.count { |message|
+          message == "Invalid timezone 'Invalid/Timezone', using default UTC."
+        }).to eq(1)
       end
     end
     context "when providing optional fields" do

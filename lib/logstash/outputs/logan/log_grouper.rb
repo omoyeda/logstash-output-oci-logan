@@ -15,6 +15,7 @@ class LogGroup
   METRICS_INVALID_REASON_LOG_GROUP_ID = "MISSING_OCI_LA_LOG_GROUP_ID_FIELD"
   METRICS_INVALID_REASON_LOG_SOURCE_NAME = "MISSING_OCI_LA_LOG_SOURCE_NAME_FIELD"
   METRICS_INVALID_REASON_PAYLOAD_TOO_LARGE = "EXCEEDED_MAX_PAYLOAD_SIZE"
+  METRICS_INVALID_REASON_TIMEZONE = "INVALID_OCI_LA_TIMEZONE"
 
   MAX_PAYLOAD_SIZE_BYTES = 2 * 1024 * 1024 # 2 MB
   
@@ -176,7 +177,9 @@ class LogGroup
             else
               isTimezoneExist = timezone_exist? timezoneIdentifier
               unless isTimezoneExist
-                @logger.warn("Invalid timezone '#{timezoneIdentifier}', using default UTC.")
+                log_validation_warning_once(record_hash, event, METRICS_INVALID_REASON_TIMEZONE) do
+                  @logger.warn("Invalid timezone '#{timezoneIdentifier}', using default UTC.")
+                end
                 event.set("oci_la_timezone", "UTC")
               end
             end
