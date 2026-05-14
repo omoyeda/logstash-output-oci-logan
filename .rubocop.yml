@@ -1,0 +1,6 @@
+AllCops:
+  CacheRootDirectory: /tmp
+  NewCops: disable
+  Exclude:
+    - 'path/**/*'
+    - 'vendor/**/*'
