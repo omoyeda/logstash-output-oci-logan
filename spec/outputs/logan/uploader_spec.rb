@@ -1,3 +1,4 @@
+require 'oci/log_analytics/log_analytics'
 require 'oci/log_analytics/log_analytics_client'
 require 'oci/regions'
 require 'oci/config'

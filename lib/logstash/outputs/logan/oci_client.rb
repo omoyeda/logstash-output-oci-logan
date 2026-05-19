@@ -1,6 +1,8 @@
+# frozen_string_literal: true
+
 ## Copyright (c) 2021, 2025  Oracle and/or its affiliates.
 ## The Universal Permissive License (UPL), Version 1.0 as shown at https://oss.oracle.com/licenses/upl/
-require "logstash/util"
+require 'logstash/util'
 require 'oci/auth/auth'
 require 'oci/log_analytics/log_analytics'
 require 'oci/log_analytics/log_analytics_client'
@@ -29,8 +31,15 @@ require 'logger'
 module LogStash
   module Outputs
     module LogAnalytics
+      # Client provides methods to initialize and manage a Log Analytics
+      # client used to send logs to Oracle Cloud Infrastructure (OCI).
+      #
+      # It supports authentication via Instance Principals or a Config File,
+      # optional custom endpoints and OCI domains, and optional proxy settings.
       class Client
-        def initialize(config_file_location, profile_name, endpoint, auth_type, oci_domain, proxy_ip, proxy_port, proxy_username, proxy_password, logger)
+        # rubocop:disable Metrics/ParameterLists, Metrics/MethodLength
+        def initialize(config_file_location, profile_name, endpoint, auth_type, oci_domain,
+                       proxy_ip, proxy_port, proxy_username, proxy_password, logger)
           @logger = logger
           @config_file_location = config_file_location
           @profile_name = profile_name
@@ -44,19 +53,22 @@ module LogStash
 
           @loganalytics_client = nil
         end
+        # rubocop:enable Metrics/ParameterLists, Metrics/MethodLength
 
         attr_reader :loganalytics_client
 
         # This function authenticates to a client so it can later be used to send Logs to OCI.
-        def initialize_loganalytics_client()
+        # rubocop:disable Metrics/AbcSize, Metrics/MethodLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+        def initialize_loganalytics_client
           case @auth_type
-          when "InstancePrincipal"
+          when 'InstancePrincipal'
             instance_principals_signer = nil
             la_endpoint = nil
             if is_valid(@oci_domain)
               fedration_endpoint = "https://auth.#{@oci_domain}/v1/x509"
               instance_principals_signer = OCI::Auth::Signers::InstancePrincipalsSecurityTokenSigner.new(
-                federation_endpoint: fedration_endpoint)
+                federation_endpoint: fedration_endpoint
+              )
               @logger.info "Custom Federation Endpoint: #{fedration_endpoint}"
             else
               instance_principals_signer = OCI::Auth::Signers::InstancePrincipalsSecurityTokenSigner.new
@@ -74,10 +86,11 @@ module LogStash
               signer: instance_principals_signer
             )
             @logger.info 'loganalytics_client initialized.'
-          when "ConfigFile"
+          when 'ConfigFile'
             my_config = OCI::ConfigFileLoader.load_config(
               config_file_location: @config_file_location,
-              profile_name: @profile_name)
+              profile_name: @profile_name
+            )
             la_endpoint = nil
             if is_valid(@endpoint)
               la_endpoint = @endpoint
@@ -89,33 +102,42 @@ module LogStash
             @loganalytics_client = OCI::LogAnalytics::LogAnalyticsClient.new(config: my_config, endpoint: la_endpoint)
             @logger.info 'loganalytics_client initialized'
           else
-            raise LogStash::ConfigurationError, "Invalid authType: #{@auth_type}, valid inputs are -  InstancePrincipal, ConfigFile"
+            raise LogStash::ConfigurationError,
+                  "Invalid authType: #{@auth_type}, valid inputs are -  InstancePrincipal, ConfigFile"
           end
 
           if is_valid(@proxy_ip) && is_number(@proxy_port)
-              if is_valid(@proxy_username)  && is_valid(@proxy_password)
-                @loganalytics_client.api_client.proxy_settings = OCI::ApiClientProxySettings.new(@proxy_ip, @proxy_port, @proxy_username, @proxy_password)
-              else
-                @loganalytics_client.api_client.proxy_settings = OCI::ApiClientProxySettings.new(@proxy_ip, @proxy_port)
-              end
+            if is_valid(@proxy_username) && is_valid(@proxy_password)
+              proxy_settings = OCI::ApiClientProxySettings.new(@proxy_ip, @proxy_port, @proxy_username, @proxy_password)
+              @loganalytics_client.api_client.proxy_settings = proxy_settings
+            else
+              @loganalytics_client.api_client.proxy_settings = OCI::ApiClientProxySettings.new(@proxy_ip, @proxy_port)
+            end
           end
-
-        rescue => ex
-          @logger.error("Error occurred while initializing LogAnalytics Client:\n                                authType: #{@auth_type},\n                                errorMessage: #{ex}")
+        rescue StandardError => e
+          @logger.error(
+            "Error occurred while initializing LogAnalytics Client:\n" \
+            "authType: #{@auth_type},\n" \
+            "errorMessage: #{e}"
+          )
           raise
         end
+        # rubocop:enable Metrics/AbcSize, Metrics/MethodLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
+        # rubocop:disable Naming/PredicatePrefix
         def is_valid(field)
-          if field.nil? || field.empty? then
-            return false
-          else
-            return true
-          end
+          return false if field.nil? || field.empty?
+
+          true
         end
 
         def is_number(field)
-          true if Integer(field) rescue false
+          Integer(field)
+          true
+        rescue StandardError
+          false
         end
+        # rubocop:enable Naming/PredicatePrefix
       end
     end
   end
